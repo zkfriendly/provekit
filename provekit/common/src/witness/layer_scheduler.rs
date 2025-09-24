@@ -176,6 +176,24 @@ impl DependencyInfo {
                 }
                 v
             }
+            WitnessBuilder::U32Addition(_, _, a, b) => {
+                let mut v = Vec::new();
+                for c in [a, b] {
+                    if let ConstantOrR1CSWitness::Witness(w) = c {
+                        v.push(*w);
+                    }
+                }
+                v
+            }
+            WitnessBuilder::And(_, lh, rh) | WitnessBuilder::Xor(_, lh, rh) => {
+                let mut v = Vec::new();
+                for c in [lh, rh] {
+                    if let ConstantOrR1CSWitness::Witness(w) = c {
+                        v.push(*w);
+                    }
+                }
+                v
+            }
         }
     }
 
@@ -191,7 +209,9 @@ impl DependencyInfo {
             | WitnessBuilder::ProductLinearOperation(idx, ..)
             | WitnessBuilder::LogUpDenominator(idx, ..)
             | WitnessBuilder::SpiceMultisetFactor(idx, ..)
-            | WitnessBuilder::BinOpLookupDenominator(idx, ..) => vec![*idx],
+            | WitnessBuilder::BinOpLookupDenominator(idx, ..)
+            | WitnessBuilder::And(idx, ..)
+            | WitnessBuilder::Xor(idx, ..) => vec![*idx],
 
             WitnessBuilder::MultiplicitiesForRange(start, range, _) => {
                 (*start..*start + *range).collect()
@@ -205,6 +225,9 @@ impl DependencyInfo {
             WitnessBuilder::MultiplicitiesForBinOp(start, ..) => {
                 let n = (2usize).pow(2 * (BINOP_ATOMIC_BITS as u32));
                 (*start..*start + n).collect()
+            }
+            WitnessBuilder::U32Addition(result_idx, carry_idx, ..) => {
+                vec![*result_idx, *carry_idx]
             }
         }
     }
