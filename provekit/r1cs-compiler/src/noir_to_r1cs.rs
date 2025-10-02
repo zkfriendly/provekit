@@ -2,6 +2,7 @@ use {
     crate::{
         binops::{add_binop_constraints, BinOp},
         memory::{add_ram_checking, add_rom_checking, MemoryBlock, MemoryOperation},
+        poseidon2_permutation::add_poseidon2_permutation,
         range_check::add_range_checks,
         sha256_compression::add_sha256_compression,
     },
@@ -244,6 +245,7 @@ impl NoirToR1CSCompiler {
         let mut xor_ops = vec![];
 
         let mut sha256_compression_ops = vec![];
+        let mut poseidon2_permutation_ops = vec![];
 
         for opcode in &circuit.opcodes {
             match opcode {
@@ -397,6 +399,25 @@ impl NoirToR1CSCompiler {
                             output_witnesses,
                         ));
                     }
+                    BlackBoxFuncCall::Poseidon2Permutation {
+                        inputs,
+                        outputs,
+                        len,
+                    } => {
+                        let input_witnesses: Vec<ConstantOrR1CSWitness> = inputs
+                            .iter()
+                            .map(|input| self.fetch_constant_or_r1cs_witness(input.input()))
+                            .collect();
+                        let output_witnesses: Vec<usize> = outputs
+                            .iter()
+                            .map(|&output| self.fetch_r1cs_witness_index(output))
+                            .collect();
+                        poseidon2_permutation_ops.push((
+                            input_witnesses,
+                            output_witnesses,
+                            *len as usize,
+                        ));
+                    }
 
                     _ => {
                         unimplemented!("Other black box function: {:?}", black_box_func_call);
@@ -432,6 +453,9 @@ impl NoirToR1CSCompiler {
             &mut range_checks,
             sha256_compression_ops,
         );
+
+        // For the Poseidon2 permutation operations, add the appropriate constraints.
+        add_poseidon2_permutation(self, poseidon2_permutation_ops);
 
         // For the AND and XOR operations, add the appropriate constraints.
         add_binop_constraints(self, BinOp::And, and_ops);
