@@ -1,0 +1,9 @@
+[package]
+name = "link_x_handle_command"
+type = "bin"
+authors = []
+compiler_version = ">=1.0.0"
+
+[dependencies]
+zkemail = { tag = "zkfriendly/sol-230-make-zkemailnr-work-with-beta-11", git = "https://github.com/zkemail/zkemail.nr", directory = "lib" }
+zkregex = { tag = "zkfriendly/sol-231-make-zk-regex-noir-to-work-with-beta-11", git = "https://github.com/zkemail/zk-regex", directory = "noir" }

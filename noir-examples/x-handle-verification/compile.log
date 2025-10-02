@@ -1,0 +1,18 @@
+[2025-10-02 15:37:01] === Compiling link_x_handle_command noir circuit ===
+[2025-10-02 15:37:01] Step 0: Checking Noir and BB versions
+[2025-10-02 15:37:01] Step 1: Compiling circuit
+warning: unused import pedersen_hash
+  ┌─ src/main.nr:4:55
+  │
+4 │ use std::{collections::bounded_vec::BoundedVec, hash::pedersen_hash};
+  │                                                       ------------- unused import
+  │
+
+[2025-10-02 15:37:02] Step 2: Writing VK
+Scheme is: ultra_honk
+Finalized circuit size: 389909
+VK saved to "./target/vk"
+[2025-10-02 15:37:03] Step 3: Writing Solidity verifier
+Scheme is: ultra_honk
+Solidity verifier saved to "./target/HonkVerifier.sol"
+[2025-10-02 15:37:03] === Done compiling link_x_handle_command noir circuit ===
