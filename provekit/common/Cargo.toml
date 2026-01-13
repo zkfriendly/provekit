@@ -28,6 +28,7 @@ whir.workspace = true
 
 # 3rd party
 anyhow.workspace = true
+sha2.workspace = true
 bytes.workspace = true
 hex.workspace = true
 itertools.workspace = true
