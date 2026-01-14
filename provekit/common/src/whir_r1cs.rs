@@ -16,6 +16,9 @@ pub use crate::hash::sha256::{Sha256MerkleConfig as MerkleConfig, Sha256PoW as P
 #[cfg(feature = "hash-keccak256")]
 pub use crate::hash::keccak256::{Keccak256MerkleConfig as MerkleConfig, Keccak256PoW as PoW, Keccak256Sponge as Sponge};
 
+#[cfg(feature = "hash-blake3")]
+pub use crate::hash::blake3::{Blake3MerkleConfig as MerkleConfig, Blake3PoW as PoW, Blake3Sponge as Sponge};
+
 #[cfg(feature = "hash-skyscraper")]
 pub use crate::hash::skyscraper::{SkyscraperMerkleConfig as MerkleConfig, SkyscraperPoW as PoW, SkyscraperSponge as Sponge};
 

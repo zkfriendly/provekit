@@ -13,6 +13,7 @@ default = ["hash-skyscraper"]
 hash-dummy = ["provekit-common/hash-dummy"]
 hash-sha256 = ["provekit-common/hash-sha256"]
 hash-keccak256 = ["provekit-common/hash-keccak256"]
+hash-blake3 = ["provekit-common/hash-blake3"]
 hash-skyscraper = ["provekit-common/hash-skyscraper"]
 
 [dependencies]
