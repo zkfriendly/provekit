@@ -11,7 +11,9 @@ use {
     rand08::Rng,
     serde::{Deserialize, Serialize},
     spongefish::{
-        codecs::arkworks_algebra::{FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize},
+        codecs::arkworks_algebra::{
+            FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize,
+        },
         DomainSeparator, ProofResult, ProverState, VerifierState,
     },
     std::borrow::Borrow,
@@ -27,7 +29,9 @@ fn from_fr(x: Fr) -> FieldElement {
 
 fn compress(l: FieldElement, r: FieldElement) -> FieldElement {
     let mut poseidon = Poseidon::<Fr>::new_circom(2).expect("Poseidon init failed");
-    let hash = poseidon.hash(&[to_fr(l), to_fr(r)]).expect("Poseidon hash failed");
+    let hash = poseidon
+        .hash(&[to_fr(l), to_fr(r)])
+        .expect("Poseidon hash failed");
     from_fr(hash)
 }
 

@@ -10,13 +10,15 @@ use {
 #[derive(Clone, Copy)]
 pub struct PoseidonPoW {
     challenge: Fr,
-    bits: u32,
+    bits:      u32,
 }
 
 impl PoseidonPoW {
     fn check_pow(&self, nonce: u64) -> bool {
         let mut poseidon = Poseidon::<Fr>::new_circom(2).expect("Poseidon init failed");
-        let hash = poseidon.hash(&[self.challenge, Fr::from(nonce)]).expect("Poseidon hash failed");
+        let hash = poseidon
+            .hash(&[self.challenge, Fr::from(nonce)])
+            .expect("Poseidon hash failed");
         let hash_bytes = hash.into_bigint().to_bytes_be();
         u64::from_be_bytes(hash_bytes[..8].try_into().unwrap()).leading_zeros() >= self.bits
     }
@@ -27,7 +29,7 @@ impl PowStrategy for PoseidonPoW {
         assert!((0.0..64.0).contains(&bits), "bits must be smaller than 64");
         Self {
             challenge: Fr::from_le_bytes_mod_order(&challenge),
-            bits: bits as u32,
+            bits:      bits as u32,
         }
     }
 

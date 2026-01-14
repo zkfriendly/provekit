@@ -9,7 +9,9 @@ use {
     rand08::Rng,
     serde::{Deserialize, Serialize},
     spongefish::{
-        codecs::arkworks_algebra::{FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize},
+        codecs::arkworks_algebra::{
+            FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize,
+        },
         DomainSeparator, ProofResult, ProverState, VerifierState,
     },
     std::borrow::Borrow,
@@ -113,4 +115,3 @@ impl whir::whir::utils::DigestToUnitDeserialize<Blake3MerkleConfig>
         Ok(r)
     }
 }
-

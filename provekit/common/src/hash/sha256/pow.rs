@@ -8,7 +8,7 @@ use {
 #[derive(Clone, Copy)]
 pub struct Sha256PoW {
     challenge: [u8; 32],
-    bits: u32,
+    bits:      u32,
 }
 
 impl Sha256PoW {
@@ -24,7 +24,10 @@ impl Sha256PoW {
 impl PowStrategy for Sha256PoW {
     fn new(challenge: [u8; 32], bits: f64) -> Self {
         assert!((0.0..64.0).contains(&bits), "bits must be smaller than 64");
-        Self { challenge, bits: bits as u32 }
+        Self {
+            challenge,
+            bits: bits as u32,
+        }
     }
 
     fn check(&mut self, nonce: u64) -> bool {

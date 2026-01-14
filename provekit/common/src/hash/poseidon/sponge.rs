@@ -32,7 +32,9 @@ pub struct PoseidonPerm {
 
 impl Default for PoseidonPerm {
     fn default() -> Self {
-        Self { state: [FieldElement::from(0); 2] }
+        Self {
+            state: [FieldElement::from(0); 2],
+        }
     }
 }
 

@@ -46,7 +46,10 @@ impl Permutation for Keccak256 {
     fn permute(&mut self) {
         let [l, r] = self.state;
         let input: [u8; 64] = transmute!([l.into_bigint().0, r.into_bigint().0]);
-        self.state = [r, FieldElement::new(bigint_from_bytes_le(Keccak256Hasher::digest(input).into()))];
+        self.state = [
+            r,
+            FieldElement::new(bigint_from_bytes_le(Keccak256Hasher::digest(input).into())),
+        ];
     }
 }
 
