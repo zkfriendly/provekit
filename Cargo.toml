@@ -81,11 +81,11 @@ skyscraper = { path = "skyscraper/core" }
 # Workspace members - ProveKit
 provekit-bench = { path = "tooling/provekit-bench" }
 provekit-cli = { path = "tooling/cli" }
-provekit-common = { path = "provekit/common" }
+provekit-common = { path = "provekit/common", default-features = false }
 provekit-gnark = { path = "tooling/provekit-gnark" }
-provekit-prover = { path = "provekit/prover" }
+provekit-prover = { path = "provekit/prover", default-features = false }
 provekit-r1cs-compiler = { path = "provekit/r1cs-compiler" }
-provekit-verifier = { path = "provekit/verifier" }
+provekit-verifier = { path = "provekit/verifier", default-features = false }
 provekit-verifier-server = { path = "tooling/verifier-server" }
 
 # 3rd party

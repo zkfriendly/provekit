@@ -1,10 +1,5 @@
 use {
-    crate::{
-        sha256::{Sha256MerkleConfig, Sha256PoW, Sha256Sponge},
-        utils::{serde_hex, sumcheck::SumcheckIOPattern},
-        witness::WitnessIOPattern,
-        FieldElement,
-    },
+    crate::{utils::{serde_hex, sumcheck::SumcheckIOPattern}, witness::WitnessIOPattern, FieldElement},
     serde::{Deserialize, Serialize},
     spongefish::DomainSeparator,
     std::fmt::{Debug, Formatter},
@@ -12,8 +7,14 @@ use {
     whir::whir::{domainsep::WhirDomainSeparator, parameters::WhirConfig as GenericWhirConfig},
 };
 
-pub type WhirConfig = GenericWhirConfig<FieldElement, Sha256MerkleConfig, Sha256PoW>;
-pub type IOPattern = DomainSeparator<Sha256Sponge, FieldElement>;
+#[cfg(feature = "hash-sha256")]
+pub use crate::sha256::{Sha256MerkleConfig as MerkleConfig, Sha256PoW as PoW, Sha256Sponge as Sponge};
+
+#[cfg(feature = "hash-skyscraper")]
+pub use crate::skyscraper::{SkyscraperMerkleConfig as MerkleConfig, SkyscraperPoW as PoW, SkyscraperSponge as Sponge};
+
+pub type WhirConfig = GenericWhirConfig<FieldElement, MerkleConfig, PoW>;
+pub type IOPattern = DomainSeparator<Sponge, FieldElement>;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct WhirR1CSScheme {

@@ -22,7 +22,7 @@ pub use {
     r1cs::R1CS,
     verifier::Verifier,
     whir::crypto::fields::Field256 as FieldElement,
-    whir_r1cs::{IOPattern, WhirConfig, WhirR1CSProof, WhirR1CSScheme},
+    whir_r1cs::{IOPattern, MerkleConfig, PoW, Sponge, WhirConfig, WhirR1CSProof, WhirR1CSScheme},
 };
 
 #[cfg(test)]

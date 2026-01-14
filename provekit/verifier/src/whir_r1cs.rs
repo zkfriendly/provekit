@@ -2,9 +2,8 @@ use {
     anyhow::{ensure, Context, Result},
     ark_std::{One, Zero},
     provekit_common::{
-        sha256::Sha256Sponge,
         utils::sumcheck::{calculate_eq, eval_cubic_poly},
-        FieldElement, WhirConfig, WhirR1CSProof, WhirR1CSScheme,
+        FieldElement, Sponge, WhirConfig, WhirR1CSProof, WhirR1CSScheme,
     },
     spongefish::{
         codecs::arkworks_algebra::{FieldToUnitDeserialize, UnitToField},
@@ -149,7 +148,7 @@ fn prepare_statement_for_witness_verifier<const N: usize>(
 
 #[instrument(skip_all)]
 pub fn run_sumcheck_verifier(
-    arthur: &mut VerifierState<Sha256Sponge, FieldElement>,
+    arthur: &mut VerifierState<Sponge, FieldElement>,
     m_0: usize,
     whir_for_spartan_blinding_config: &WhirConfig,
 ) -> Result<DataFromSumcheckVerifier> {
@@ -215,7 +214,7 @@ pub fn run_sumcheck_verifier(
 
 #[instrument(skip_all)]
 pub fn run_whir_pcs_verifier(
-    arthur: &mut VerifierState<Sha256Sponge, FieldElement>,
+    arthur: &mut VerifierState<Sponge, FieldElement>,
     parsed_commitment: &ParsedCommitment<FieldElement, FieldElement>,
     params: &WhirConfig,
     statement_verifier: &Statement<FieldElement>,
@@ -229,7 +228,7 @@ pub fn run_whir_pcs_verifier(
 
 #[instrument(skip_all)]
 pub fn run_whir_pcs_batch_verifier(
-    arthur: &mut VerifierState<Sha256Sponge, FieldElement>,
+    arthur: &mut VerifierState<Sponge, FieldElement>,
     params: &WhirConfig,
     parsed_commitments: &[ParsedCommitment<FieldElement, FieldElement>],
     statements: &[Statement<FieldElement>],

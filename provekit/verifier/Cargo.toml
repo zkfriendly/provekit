@@ -8,9 +8,14 @@ license.workspace = true
 homepage.workspace = true
 repository.workspace = true
 
+[features]
+default = ["hash-skyscraper"]
+hash-sha256 = ["provekit-common/hash-sha256"]
+hash-skyscraper = ["provekit-common/hash-skyscraper"]
+
 [dependencies]
 # Workspace crates
-provekit-common.workspace = true
+provekit-common = { workspace = true, default-features = false }
 
 # Cryptography and proof systems
 ark-std.workspace = true

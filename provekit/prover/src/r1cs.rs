@@ -4,10 +4,9 @@ use {
     crate::witness::witness_builder::WitnessBuilderSolver,
     acir::native_types::WitnessMap,
     provekit_common::{
-        sha256::Sha256Sponge,
         utils::batch_inverse_montgomery,
         witness::{LayerType, LayeredWitnessBuilders, WitnessBuilder},
-        FieldElement, NoirElement, R1CS,
+        FieldElement, NoirElement, Sponge, R1CS,
     },
     spongefish::ProverState,
     tracing::instrument,
@@ -19,7 +18,7 @@ pub trait R1CSSolver {
         witness: &mut Vec<Option<FieldElement>>,
         plan: LayeredWitnessBuilders,
         acir_map: &WitnessMap<NoirElement>,
-        transcript: &mut ProverState<Sha256Sponge, FieldElement>,
+        transcript: &mut ProverState<Sponge, FieldElement>,
     );
 
     #[cfg(test)]
@@ -53,7 +52,7 @@ impl R1CSSolver for R1CS {
         witness: &mut Vec<Option<FieldElement>>,
         plan: LayeredWitnessBuilders,
         acir_map: &WitnessMap<NoirElement>,
-        transcript: &mut ProverState<Sha256Sponge, FieldElement>,
+        transcript: &mut ProverState<Sponge, FieldElement>,
     ) {
         for layer in &plan.layers {
             match layer.typ {

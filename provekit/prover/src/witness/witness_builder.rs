@@ -4,13 +4,12 @@ use {
     ark_ff::{BigInteger, PrimeField},
     ark_std::Zero,
     provekit_common::{
-        sha256::Sha256Sponge,
         utils::noir_to_native,
         witness::{
             ConstantOrR1CSWitness, ConstantTerm, ProductLinearTerm, SumTerm, WitnessBuilder,
             WitnessCoefficient, BINOP_ATOMIC_BITS,
         },
-        FieldElement, NoirElement,
+        FieldElement, NoirElement, Sponge,
     },
     spongefish::{codecs::arkworks_algebra::UnitToField, ProverState},
 };
@@ -20,7 +19,7 @@ pub trait WitnessBuilderSolver {
         &self,
         acir_witness_idx_to_value_map: &WitnessMap<NoirElement>,
         witness: &mut [Option<FieldElement>],
-        transcript: &mut ProverState<Sha256Sponge, FieldElement>,
+        transcript: &mut ProverState<Sponge, FieldElement>,
     );
 }
 
@@ -29,7 +28,7 @@ impl WitnessBuilderSolver for WitnessBuilder {
         &self,
         acir_witness_idx_to_value_map: &WitnessMap<NoirElement>,
         witness: &mut [Option<FieldElement>],
-        transcript: &mut ProverState<Sha256Sponge, FieldElement>,
+        transcript: &mut ProverState<Sponge, FieldElement>,
     ) {
         match self {
             WitnessBuilder::Constant(ConstantTerm(witness_idx, c)) => {

@@ -43,5 +43,10 @@ zerocopy.workspace = true
 zeroize.workspace = true
 zstd.workspace = true
 
+[features]
+default = ["hash-skyscraper"]
+hash-sha256 = []
+hash-skyscraper = []
+
 [lints]
 workspace = true
