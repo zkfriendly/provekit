@@ -55,7 +55,7 @@ Build and run with a specific hash function:
 
 ```bash
 # Build with desired hash (e.g., blake3)
-cargo build --release --bin provekit-cli --no-default-features --features hash-blake3
+cargo build --release --bin provekit-cli --no-default-features --features "profiling-allocator,hash-blake3"
 
 # Prepare
 ./target/release/provekit-cli prepare <circuit.json> --pkp prover.pkp --pkv verifier.pkv
