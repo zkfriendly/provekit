@@ -1,4 +1,5 @@
 use {
+    crate::hash::pow_leading_zeros,
     sha2::{Digest, Sha256 as Sha256Hasher},
     spongefish_pow::PowStrategy,
 };
@@ -7,33 +8,32 @@ use {
 #[derive(Clone, Copy)]
 pub struct Sha256PoW {
     challenge: [u8; 32],
-    required_zeros: u32,
+    bits: u32,
+}
+
+impl Sha256PoW {
+    fn check_pow(&self, nonce: u64) -> bool {
+        let hash = Sha256Hasher::new()
+            .chain_update(&self.challenge)
+            .chain_update(&nonce.to_le_bytes())
+            .finalize();
+        u64::from_be_bytes(hash[..8].try_into().unwrap()).leading_zeros() >= self.bits
+    }
 }
 
 impl PowStrategy for Sha256PoW {
     fn new(challenge: [u8; 32], bits: f64) -> Self {
         assert!((0.0..64.0).contains(&bits), "bits must be smaller than 64");
-        Self { challenge, required_zeros: bits as u32 }
+        Self { challenge, bits: bits as u32 }
     }
 
     fn check(&mut self, nonce: u64) -> bool {
-        let hash = Sha256Hasher::new()
-            .chain_update(&self.challenge)
-            .chain_update(&nonce.to_le_bytes())
-            .finalize();
-
-        // Convert first 8 bytes to big-endian u64 and count leading zeros
-        // leading_zeros() compiles to a single CPU instruction (lzcnt/clz)
-        u64::from_be_bytes(hash[..8].try_into().unwrap()).leading_zeros() >= self.required_zeros
+        self.check_pow(nonce)
     }
 
     fn solve(&mut self) -> Option<u64> {
-        for nonce in 0..u64::MAX {
-            if self.check(nonce) {
-                return Some(nonce);
-            }
-        }
-        None
+        let this = *self;
+        Some(pow_leading_zeros::solve(|nonce| this.check_pow(nonce)))
     }
 }
 

@@ -17,15 +17,10 @@ use {
 };
 
 #[inline]
-fn bigint_from_bytes_le(bytes: [u8; 32]) -> BigInt<4> {
-    BigInt::new(transmute!(bytes))
-}
-
-#[inline]
 fn compress(l: FieldElement, r: FieldElement) -> FieldElement {
     let input: [u8; 64] = transmute!([l.into_bigint().0, r.into_bigint().0]);
     let hash: [u8; 32] = *blake3::hash(&input).as_bytes();
-    FieldElement::new(bigint_from_bytes_le(hash))
+    FieldElement::new(BigInt::new(transmute!(hash)))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

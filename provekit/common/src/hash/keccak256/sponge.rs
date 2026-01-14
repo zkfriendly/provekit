@@ -44,9 +44,7 @@ impl Permutation for Keccak256 {
     }
 
     fn permute(&mut self) {
-        // Rotate state: [l, r] -> [r, H(l || r)]
         let [l, r] = self.state;
-        // Transmute both field elements to a single 64-byte array
         let input: [u8; 64] = transmute!([l.into_bigint().0, r.into_bigint().0]);
         self.state = [r, FieldElement::new(bigint_from_bytes_le(Keccak256Hasher::digest(input).into()))];
     }

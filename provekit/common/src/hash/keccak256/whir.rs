@@ -16,29 +16,13 @@ use {
         DomainSeparator, ProofResult, ProverState, VerifierState,
     },
     std::borrow::Borrow,
+    zerocopy::transmute,
 };
 
-fn to_bytes(x: FieldElement) -> [u8; 32] {
-    let limbs = x.into_bigint().0;
-    let mut bytes = [0u8; 32];
-    for (i, limb) in limbs.iter().enumerate() {
-        bytes[i * 8..(i + 1) * 8].copy_from_slice(&limb.to_le_bytes());
-    }
-    bytes
-}
-
 fn compress(l: FieldElement, r: FieldElement) -> FieldElement {
-    let mut hasher = Keccak256::new();
-    hasher.update(&to_bytes(l));
-    hasher.update(&to_bytes(r));
-    let hash = hasher.finalize();
-    let out: [u64; 4] = hash
-        .chunks_exact(8)
-        .map(|s| u64::from_le_bytes(s.try_into().unwrap()))
-        .collect::<Vec<_>>()
-        .try_into()
-        .unwrap();
-    FieldElement::new(BigInt(out))
+    let input: [u8; 64] = transmute!([l.into_bigint().0, r.into_bigint().0]);
+    let hash: [u8; 32] = Keccak256::digest(&input).into();
+    FieldElement::new(BigInt::new(transmute!(hash)))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
