@@ -48,3 +48,23 @@ Make sure you are in the root directory and run the script from root. This is be
 ```
 
 Results are saved to `benchmark_results/comparison_<timestamp>.md`.
+
+## Manual Usage with Feature Flags
+
+Build and run with a specific hash function:
+
+```bash
+# Build with desired hash (e.g., blake3)
+cargo build --release --bin provekit-cli --no-default-features --features hash-blake3
+
+# Prepare
+./target/release/provekit-cli prepare <circuit.json> --pkp prover.pkp --pkv verifier.pkv
+
+# Prove
+./target/release/provekit-cli prove prover.pkp Prover.toml --out proof.np
+
+# Verify
+./target/release/provekit-cli verify verifier.pkv proof.np
+```
+
+Replace `hash-blake3` with any feature flag from the table above.
