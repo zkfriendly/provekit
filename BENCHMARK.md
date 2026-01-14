@@ -15,6 +15,12 @@ Compares preparation/proving/verification performance across different hash func
 
 ## Prerequisites
 
+Required tools:
+
+- `python3` - for timing and statistics calculations
+- `cargo` - Rust toolchain for compiling provekit
+- `nargo` - Noir toolchain for compiling circuits
+
 Install the Noir toolchain:
 
 ```bash
