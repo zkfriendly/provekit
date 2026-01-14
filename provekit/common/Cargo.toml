@@ -45,6 +45,7 @@ zstd.workspace = true
 
 [features]
 default = ["hash-skyscraper"]
+hash-dummy = []
 hash-sha256 = []
 hash-skyscraper = []
 

@@ -36,5 +36,6 @@ workspace = true
 default = ["profiling-allocator", "hash-skyscraper"]
 profiling-allocator = []
 tracy = ["dep:tracing-tracy"]
+hash-dummy = ["provekit-common/hash-dummy", "provekit-prover/hash-dummy", "provekit-verifier/hash-dummy"]
 hash-sha256 = ["provekit-common/hash-sha256", "provekit-prover/hash-sha256", "provekit-verifier/hash-sha256"]
 hash-skyscraper = ["provekit-common/hash-skyscraper", "provekit-prover/hash-skyscraper", "provekit-verifier/hash-skyscraper"]

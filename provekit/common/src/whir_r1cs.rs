@@ -7,6 +7,9 @@ use {
     whir::whir::{domainsep::WhirDomainSeparator, parameters::WhirConfig as GenericWhirConfig},
 };
 
+#[cfg(feature = "hash-dummy")]
+pub use crate::dummy::{DummyMerkleConfig as MerkleConfig, DummyPoW as PoW, DummySponge as Sponge};
+
 #[cfg(feature = "hash-sha256")]
 pub use crate::sha256::{Sha256MerkleConfig as MerkleConfig, Sha256PoW as PoW, Sha256Sponge as Sponge};
 

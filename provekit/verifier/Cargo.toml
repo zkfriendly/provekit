@@ -10,6 +10,7 @@ repository.workspace = true
 
 [features]
 default = ["hash-skyscraper"]
+hash-dummy = ["provekit-common/hash-dummy"]
 hash-sha256 = ["provekit-common/hash-sha256"]
 hash-skyscraper = ["provekit-common/hash-skyscraper"]
 

@@ -1,3 +1,4 @@
+pub mod dummy;
 pub mod file;
 mod interner;
 mod noir_proof_scheme;
