@@ -11,9 +11,23 @@ mkdir -p "$RESULTS"
 
 calc() { python3 -c "$1"; }
 
+# Detect OS for platform-specific time command
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    TIME_CMD="/usr/bin/time -l"
+else
+    TIME_CMD="/usr/bin/time -v"
+fi
+
 extract_mem() {
-    local bytes=$(echo "$1" | grep "maximum resident set size" | awk '{print $1}')
-    python3 -c "print(int($bytes / 1024 / 1024))"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS: "maximum resident set size" in bytes
+        local bytes=$(echo "$1" | grep "maximum resident set size" | awk '{print $1}')
+        python3 -c "print(int($bytes / 1024 / 1024))"
+    else
+        # Linux: "Maximum resident set size (kbytes):" value at end of line
+        local kb=$(echo "$1" | grep "Maximum resident set size" | awk '{print $NF}')
+        python3 -c "print(int($kb / 1024))"
+    fi
 }
 
 stats_time() {
@@ -53,7 +67,7 @@ run_benchmark() {
         
         local t0=$(calc 'import time; print(time.time())')
         local out
-        if ! out=$(/usr/bin/time -l ./target/release/provekit-cli prepare "$CIRCUIT" --pkp "$workdir/prover.pkp" --pkv "$workdir/verifier.pkv" 2>&1); then
+        if ! out=$($TIME_CMD ./target/release/provekit-cli prepare "$CIRCUIT" --pkp "$workdir/prover.pkp" --pkv "$workdir/verifier.pkv" 2>&1); then
             echo "ERROR: prepare command failed:" >&2
             echo "$out" >&2
             exit 1
@@ -63,7 +77,7 @@ run_benchmark() {
         prep_m+=($(extract_mem "$out"))
         
         t0=$(calc 'import time; print(time.time())')
-        if ! out=$(/usr/bin/time -l ./target/release/provekit-cli prove "$workdir/prover.pkp" "$INPUT" --out "$workdir/proof.np" 2>&1); then
+        if ! out=$($TIME_CMD ./target/release/provekit-cli prove "$workdir/prover.pkp" "$INPUT" --out "$workdir/proof.np" 2>&1); then
             echo "ERROR: prove command failed:" >&2
             echo "$out" >&2
             exit 1
@@ -73,7 +87,7 @@ run_benchmark() {
         prove_m+=($(extract_mem "$out"))
         
         t0=$(calc 'import time; print(time.time())')
-        if ! out=$(/usr/bin/time -l ./target/release/provekit-cli verify "$workdir/verifier.pkv" "$workdir/proof.np" 2>&1); then
+        if ! out=$($TIME_CMD ./target/release/provekit-cli verify "$workdir/verifier.pkv" "$workdir/proof.np" 2>&1); then
             echo "ERROR: verify command failed:" >&2
             echo "$out" >&2
             exit 1
@@ -101,12 +115,13 @@ run_benchmark() {
 echo "ProveKit Hash Benchmark - $ITERATIONS iterations"
 echo ""
 
-run_benchmark "dummy" "hash-dummy"
+run_benchmark "baseline" "hash-dummy"
 run_benchmark "skyscraper" "hash-skyscraper"
-run_benchmark "poseidon" "hash-poseidon"
 run_benchmark "sha256" "hash-sha256"
 run_benchmark "keccak256" "hash-keccak256"
 run_benchmark "blake3" "hash-blake3"
+run_benchmark "poseidon" "hash-poseidon"
+
 
 echo ""
 echo "=== Results ==="
