@@ -103,6 +103,7 @@ echo ""
 
 run_benchmark "dummy" "hash-dummy"
 run_benchmark "skyscraper" "hash-skyscraper"
+run_benchmark "poseidon" "hash-poseidon"
 run_benchmark "sha256" "hash-sha256"
 run_benchmark "keccak256" "hash-keccak256"
 run_benchmark "blake3" "hash-blake3"
@@ -111,18 +112,18 @@ echo ""
 echo "=== Results ==="
 echo ""
 echo "Time (s) - avg (min-max):"
-echo "| Phase   | Dummy | Skyscraper | SHA256 | Keccak256 | BLAKE3 |"
-echo "|---------|-------|------------|--------|-----------|-------|"
-echo "| Prepare | $dummy_prep_t | $skyscraper_prep_t | $sha256_prep_t | $keccak256_prep_t | $blake3_prep_t |"
-echo "| Prove   | $dummy_prove_t | $skyscraper_prove_t | $sha256_prove_t | $keccak256_prove_t | $blake3_prove_t |"
-echo "| Verify  | $dummy_verify_t | $skyscraper_verify_t | $sha256_verify_t | $keccak256_verify_t | $blake3_verify_t |"
+echo "| Phase   | Dummy | Skyscraper | Poseidon | SHA256 | Keccak256 | BLAKE3 |"
+echo "|---------|-------|------------|----------|--------|-----------|--------|"
+echo "| Prepare | $dummy_prep_t | $skyscraper_prep_t | $poseidon_prep_t | $sha256_prep_t | $keccak256_prep_t | $blake3_prep_t |"
+echo "| Prove   | $dummy_prove_t | $skyscraper_prove_t | $poseidon_prove_t | $sha256_prove_t | $keccak256_prove_t | $blake3_prove_t |"
+echo "| Verify  | $dummy_verify_t | $skyscraper_verify_t | $poseidon_verify_t | $sha256_verify_t | $keccak256_verify_t | $blake3_verify_t |"
 echo ""
 echo "Memory (MB) - avg (min-max):"
-echo "| Phase   | Dummy | Skyscraper | SHA256 | Keccak256 | BLAKE3 |"
-echo "|---------|-------|------------|--------|-----------|-------|"
-echo "| Prepare | $dummy_prep_m | $skyscraper_prep_m | $sha256_prep_m | $keccak256_prep_m | $blake3_prep_m |"
-echo "| Prove   | $dummy_prove_m | $skyscraper_prove_m | $sha256_prove_m | $keccak256_prove_m | $blake3_prove_m |"
-echo "| Verify  | $dummy_verify_m | $skyscraper_verify_m | $sha256_verify_m | $keccak256_verify_m | $blake3_verify_m |"
+echo "| Phase   | Dummy | Skyscraper | Poseidon | SHA256 | Keccak256 | BLAKE3 |"
+echo "|---------|-------|------------|----------|--------|-----------|--------|"
+echo "| Prepare | $dummy_prep_m | $skyscraper_prep_m | $poseidon_prep_m | $sha256_prep_m | $keccak256_prep_m | $blake3_prep_m |"
+echo "| Prove   | $dummy_prove_m | $skyscraper_prove_m | $poseidon_prove_m | $sha256_prove_m | $keccak256_prove_m | $blake3_prove_m |"
+echo "| Verify  | $dummy_verify_m | $skyscraper_verify_m | $poseidon_verify_m | $sha256_verify_m | $keccak256_verify_m | $blake3_verify_m |"
 
 cat > "$RESULTS/comparison_${TS}.md" << EOF
 # Hash Benchmark - $(date)
@@ -131,19 +132,19 @@ Iterations: $ITERATIONS
 
 ## Time (s) - avg (min-max)
 
-| Phase   | Dummy | Skyscraper | SHA256 | Keccak256 | BLAKE3 |
-|---------|-------|------------|--------|-----------|-------|
-| Prepare | $dummy_prep_t | $skyscraper_prep_t | $sha256_prep_t | $keccak256_prep_t | $blake3_prep_t |
-| Prove   | $dummy_prove_t | $skyscraper_prove_t | $sha256_prove_t | $keccak256_prove_t | $blake3_prove_t |
-| Verify  | $dummy_verify_t | $skyscraper_verify_t | $sha256_verify_t | $keccak256_verify_t | $blake3_verify_t |
+| Phase   | Dummy | Skyscraper | Poseidon | SHA256 | Keccak256 | BLAKE3 |
+|---------|-------|------------|----------|--------|-----------|--------|
+| Prepare | $dummy_prep_t | $skyscraper_prep_t | $poseidon_prep_t | $sha256_prep_t | $keccak256_prep_t | $blake3_prep_t |
+| Prove   | $dummy_prove_t | $skyscraper_prove_t | $poseidon_prove_t | $sha256_prove_t | $keccak256_prove_t | $blake3_prove_t |
+| Verify  | $dummy_verify_t | $skyscraper_verify_t | $poseidon_verify_t | $sha256_verify_t | $keccak256_verify_t | $blake3_verify_t |
 
 ## Memory (MB) - avg (min-max)
 
-| Phase   | Dummy | Skyscraper | SHA256 | Keccak256 | BLAKE3 |
-|---------|-------|------------|--------|-----------|-------|
-| Prepare | $dummy_prep_m | $skyscraper_prep_m | $sha256_prep_m | $keccak256_prep_m | $blake3_prep_m |
-| Prove   | $dummy_prove_m | $skyscraper_prove_m | $sha256_prove_m | $keccak256_prove_m | $blake3_prove_m |
-| Verify  | $dummy_verify_m | $skyscraper_verify_m | $sha256_verify_m | $keccak256_verify_m | $blake3_verify_m |
+| Phase   | Dummy | Skyscraper | Poseidon | SHA256 | Keccak256 | BLAKE3 |
+|---------|-------|------------|----------|--------|-----------|--------|
+| Prepare | $dummy_prep_m | $skyscraper_prep_m | $poseidon_prep_m | $sha256_prep_m | $keccak256_prep_m | $blake3_prep_m |
+| Prove   | $dummy_prove_m | $skyscraper_prove_m | $poseidon_prove_m | $sha256_prove_m | $keccak256_prove_m | $blake3_prove_m |
+| Verify  | $dummy_verify_m | $skyscraper_verify_m | $poseidon_verify_m | $sha256_verify_m | $keccak256_verify_m | $blake3_verify_m |
 EOF
 
 echo ""
