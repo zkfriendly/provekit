@@ -12,6 +12,7 @@ repository.workspace = true
 default = ["hash-skyscraper"]
 hash-dummy = ["provekit-common/hash-dummy"]
 hash-sha256 = ["provekit-common/hash-sha256"]
+hash-keccak256 = ["provekit-common/hash-keccak256"]
 hash-skyscraper = ["provekit-common/hash-skyscraper"]
 
 [dependencies]

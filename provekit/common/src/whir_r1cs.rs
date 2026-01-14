@@ -8,13 +8,16 @@ use {
 };
 
 #[cfg(feature = "hash-dummy")]
-pub use crate::dummy::{DummyMerkleConfig as MerkleConfig, DummyPoW as PoW, DummySponge as Sponge};
+pub use crate::hash::dummy::{DummyMerkleConfig as MerkleConfig, DummyPoW as PoW, DummySponge as Sponge};
 
 #[cfg(feature = "hash-sha256")]
-pub use crate::sha256::{Sha256MerkleConfig as MerkleConfig, Sha256PoW as PoW, Sha256Sponge as Sponge};
+pub use crate::hash::sha256::{Sha256MerkleConfig as MerkleConfig, Sha256PoW as PoW, Sha256Sponge as Sponge};
+
+#[cfg(feature = "hash-keccak256")]
+pub use crate::hash::keccak256::{Keccak256MerkleConfig as MerkleConfig, Keccak256PoW as PoW, Keccak256Sponge as Sponge};
 
 #[cfg(feature = "hash-skyscraper")]
-pub use crate::skyscraper::{SkyscraperMerkleConfig as MerkleConfig, SkyscraperPoW as PoW, SkyscraperSponge as Sponge};
+pub use crate::hash::skyscraper::{SkyscraperMerkleConfig as MerkleConfig, SkyscraperPoW as PoW, SkyscraperSponge as Sponge};
 
 pub type WhirConfig = GenericWhirConfig<FieldElement, MerkleConfig, PoW>;
 pub type IOPattern = DomainSeparator<Sponge, FieldElement>;

@@ -52,19 +52,32 @@ run_benchmark() {
         echo "  Run $i/$ITERATIONS"
         
         local t0=$(calc 'import time; print(time.time())')
-        local out=$(/usr/bin/time -l ./target/release/provekit-cli prepare "$CIRCUIT" --pkp "$workdir/prover.pkp" --pkv "$workdir/verifier.pkv" 2>&1)
+        local out
+        if ! out=$(/usr/bin/time -l ./target/release/provekit-cli prepare "$CIRCUIT" --pkp "$workdir/prover.pkp" --pkv "$workdir/verifier.pkv" 2>&1); then
+            echo "ERROR: prepare command failed:" >&2
+            echo "$out" >&2
+            exit 1
+        fi
         local t1=$(calc 'import time; print(time.time())')
         prep_t+=($(calc "print(f'{$t1 - $t0:.3f}')"))
         prep_m+=($(extract_mem "$out"))
         
         t0=$(calc 'import time; print(time.time())')
-        out=$(/usr/bin/time -l ./target/release/provekit-cli prove "$workdir/prover.pkp" "$INPUT" --out "$workdir/proof.np" 2>&1)
+        if ! out=$(/usr/bin/time -l ./target/release/provekit-cli prove "$workdir/prover.pkp" "$INPUT" --out "$workdir/proof.np" 2>&1); then
+            echo "ERROR: prove command failed:" >&2
+            echo "$out" >&2
+            exit 1
+        fi
         t1=$(calc 'import time; print(time.time())')
         prove_t+=($(calc "print(f'{$t1 - $t0:.3f}')"))
         prove_m+=($(extract_mem "$out"))
         
         t0=$(calc 'import time; print(time.time())')
-        out=$(/usr/bin/time -l ./target/release/provekit-cli verify "$workdir/verifier.pkv" "$workdir/proof.np" 2>&1)
+        if ! out=$(/usr/bin/time -l ./target/release/provekit-cli verify "$workdir/verifier.pkv" "$workdir/proof.np" 2>&1); then
+            echo "ERROR: verify command failed:" >&2
+            echo "$out" >&2
+            exit 1
+        fi
         t1=$(calc 'import time; print(time.time())')
         verify_t+=($(calc "print(f'{$t1 - $t0:.3f}')"))
         verify_m+=($(extract_mem "$out"))
@@ -77,12 +90,12 @@ run_benchmark() {
     read prove_m_avg prove_m_min prove_m_max <<< $(stats_mem "${prove_m[@]}")
     read verify_m_avg verify_m_min verify_m_max <<< $(stats_mem "${verify_m[@]}")
     
-    eval "${name}_prep_t='$prep_t_avg ($prep_t_min-$prep_t_max)'"
+    eval "${name}_prep_t=\"\$prep_t_avg (\$prep_t_min-\$prep_t_max)\""
     eval "${name}_prove_t='$prove_t_avg ($prove_t_min-$prove_t_max)'"
-    eval "${name}_verify_t='$verify_t_avg ($verify_t_min-$verify_t_max)'"
-    eval "${name}_prep_m='$prep_m_avg ($prep_m_min-$prep_m_max)'"
-    eval "${name}_prove_m='$prove_m_avg ($prove_m_min-$prove_m_max)'"
-    eval "${name}_verify_m='$verify_m_avg ($verify_m_min-$verify_m_max)'"
+    eval "${name}_verify_t=\"\$verify_t_avg (\$verify_t_min-\$verify_t_max)\""
+    eval "${name}_prep_m=\"\$prep_m_avg (\$prep_m_min-\$prep_m_max)\""
+    eval "${name}_prove_m=\"\$prove_m_avg (\$prove_m_min-\$prove_m_max)\""
+    eval "${name}_verify_m=\"\$verify_m_avg (\$verify_m_min-\$verify_m_max)\""
 }
 
 echo "ProveKit Hash Benchmark - $ITERATIONS iterations"
@@ -91,23 +104,24 @@ echo ""
 run_benchmark "dummy" "hash-dummy"
 run_benchmark "skyscraper" "hash-skyscraper"
 run_benchmark "sha256" "hash-sha256"
+run_benchmark "keccak256" "hash-keccak256"
 
 echo ""
 echo "=== Results ==="
 echo ""
 echo "Time (s) - avg (min-max):"
-echo "| Phase   | Dummy | Skyscraper | SHA256 |"
-echo "|---------|-------|------------|--------|"
-echo "| Prepare | $dummy_prep_t | $skyscraper_prep_t | $sha256_prep_t |"
-echo "| Prove   | $dummy_prove_t | $skyscraper_prove_t | $sha256_prove_t |"
-echo "| Verify  | $dummy_verify_t | $skyscraper_verify_t | $sha256_verify_t |"
+echo "| Phase   | Dummy | Skyscraper | SHA256 | Keccak256 |"
+echo "|---------|-------|------------|--------|-----------|"
+echo "| Prepare | $dummy_prep_t | $skyscraper_prep_t | $sha256_prep_t | $keccak256_prep_t |"
+echo "| Prove   | $dummy_prove_t | $skyscraper_prove_t | $sha256_prove_t | $keccak256_prove_t |"
+echo "| Verify  | $dummy_verify_t | $skyscraper_verify_t | $sha256_verify_t | $keccak256_verify_t |"
 echo ""
 echo "Memory (MB) - avg (min-max):"
-echo "| Phase   | Dummy | Skyscraper | SHA256 |"
-echo "|---------|-------|------------|--------|"
-echo "| Prepare | $dummy_prep_m | $skyscraper_prep_m | $sha256_prep_m |"
-echo "| Prove   | $dummy_prove_m | $skyscraper_prove_m | $sha256_prove_m |"
-echo "| Verify  | $dummy_verify_m | $skyscraper_verify_m | $sha256_verify_m |"
+echo "| Phase   | Dummy | Skyscraper | SHA256 | Keccak256 |"
+echo "|---------|-------|------------|--------|-----------|"
+echo "| Prepare | $dummy_prep_m | $skyscraper_prep_m | $sha256_prep_m | $keccak256_prep_m |"
+echo "| Prove   | $dummy_prove_m | $skyscraper_prove_m | $sha256_prove_m | $keccak256_prove_m |"
+echo "| Verify  | $dummy_verify_m | $skyscraper_verify_m | $sha256_verify_m | $keccak256_verify_m |"
 
 cat > "$RESULTS/comparison_${TS}.md" << EOF
 # Hash Benchmark - $(date)
@@ -116,19 +130,19 @@ Iterations: $ITERATIONS
 
 ## Time (s) - avg (min-max)
 
-| Phase   | Dummy | Skyscraper | SHA256 |
-|---------|-------|------------|--------|
-| Prepare | $dummy_prep_t | $skyscraper_prep_t | $sha256_prep_t |
-| Prove   | $dummy_prove_t | $skyscraper_prove_t | $sha256_prove_t |
-| Verify  | $dummy_verify_t | $skyscraper_verify_t | $sha256_verify_t |
+| Phase   | Dummy | Skyscraper | SHA256 | Keccak256 |
+|---------|-------|------------|--------|-----------|
+| Prepare | $dummy_prep_t | $skyscraper_prep_t | $sha256_prep_t | $keccak256_prep_t |
+| Prove   | $dummy_prove_t | $skyscraper_prove_t | $sha256_prove_t | $keccak256_prove_t |
+| Verify  | $dummy_verify_t | $skyscraper_verify_t | $sha256_verify_t | $keccak256_verify_t |
 
 ## Memory (MB) - avg (min-max)
 
-| Phase   | Dummy | Skyscraper | SHA256 |
-|---------|-------|------------|--------|
-| Prepare | $dummy_prep_m | $skyscraper_prep_m | $sha256_prep_m |
-| Prove   | $dummy_prove_m | $skyscraper_prove_m | $sha256_prove_m |
-| Verify  | $dummy_verify_m | $skyscraper_verify_m | $sha256_verify_m |
+| Phase   | Dummy | Skyscraper | SHA256 | Keccak256 |
+|---------|-------|------------|--------|-----------|
+| Prepare | $dummy_prep_m | $skyscraper_prep_m | $sha256_prep_m | $keccak256_prep_m |
+| Prove   | $dummy_prove_m | $skyscraper_prove_m | $sha256_prove_m | $keccak256_prove_m |
+| Verify  | $dummy_verify_m | $skyscraper_verify_m | $sha256_verify_m | $keccak256_verify_m |
 EOF
 
 echo ""

@@ -1,45 +1,26 @@
-use {
-    sha2::{Digest, Sha256 as Sha256Hasher},
-    spongefish_pow::PowStrategy,
-};
+use {sha3::{Digest, Keccak256}, spongefish_pow::PowStrategy};
 
-/// SHA-256 proof of work
 #[derive(Clone, Copy)]
-pub struct Sha256PoW {
+pub struct Keccak256PoW {
     challenge: [u8; 32],
-    bits:      f64,
+    required_zeros: u32,
 }
 
-impl PowStrategy for Sha256PoW {
+impl PowStrategy for Keccak256PoW {
     fn new(challenge: [u8; 32], bits: f64) -> Self {
         assert!((0.0..64.0).contains(&bits), "bits must be smaller than 64");
-        Self { challenge, bits }
+        Self { challenge, required_zeros: bits as u32 }
     }
 
     fn check(&mut self, nonce: u64) -> bool {
-        let mut hasher = Sha256Hasher::new();
-        hasher.update(&self.challenge);
-        hasher.update(&nonce.to_le_bytes());
-        let hash = hasher.finalize();
+        let hash = Keccak256::new()
+            .chain_update(&self.challenge)
+            .chain_update(&nonce.to_le_bytes())
+            .finalize();
 
-        let required_zeros = self.bits as u32;
-        let full_bytes = required_zeros / 8;
-        let remaining_bits = required_zeros % 8;
-
-        for byte in hash.iter().take(full_bytes as usize) {
-            if *byte != 0 {
-                return false;
-            }
-        }
-
-        if remaining_bits > 0 && (full_bytes as usize) < 32 {
-            let mask = 0xFF << (8 - remaining_bits);
-            if hash[full_bytes as usize] & mask != 0 {
-                return false;
-            }
-        }
-
-        true
+        // Convert first 8 bytes to big-endian u64 and count leading zeros
+        // leading_zeros() compiles to a single CPU instruction (lzcnt/clz)
+        u64::from_be_bytes(hash[..8].try_into().unwrap()).leading_zeros() >= self.required_zeros
     }
 
     fn solve(&mut self) -> Option<u64> {
@@ -53,7 +34,7 @@ impl PowStrategy for Sha256PoW {
 }
 
 #[test]
-fn test_pow_sha256() {
+fn test_pow_keccak256() {
     use {
         spongefish::{
             ByteDomainSeparator, BytesToUnitDeserialize, BytesToUnitSerialize, DefaultHash,
@@ -70,10 +51,10 @@ fn test_pow_sha256() {
 
     let mut prover = iopattern.to_prover_state();
     prover.add_bytes(b"\0").expect("Invalid IOPattern");
-    prover.challenge_pow::<Sha256PoW>(BITS).unwrap();
+    prover.challenge_pow::<Keccak256PoW>(BITS).unwrap();
 
     let mut verifier = iopattern.to_verifier_state(prover.narg_string());
     let byte = verifier.next_bytes::<1>().unwrap();
     assert_eq!(&byte, b"\0");
-    verifier.challenge_pow::<Sha256PoW>(BITS).unwrap();
+    verifier.challenge_pow::<Keccak256PoW>(BITS).unwrap();
 }

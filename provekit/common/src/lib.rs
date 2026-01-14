@@ -1,11 +1,9 @@
-pub mod dummy;
 pub mod file;
+pub mod hash;
 mod interner;
 mod noir_proof_scheme;
 mod prover;
 mod r1cs;
-pub mod sha256;
-pub mod skyscraper;
 mod sparse_matrix;
 pub mod utils;
 mod verifier;

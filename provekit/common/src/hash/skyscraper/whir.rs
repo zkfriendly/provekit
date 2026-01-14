@@ -1,13 +1,11 @@
-//! Dummy Merkle tree config for benchmarking - NOT SECURE, just fast.
-//! Uses simple addition instead of cryptographic hashing.
-
 use {
-    crate::{dummy::DummySponge, FieldElement},
+    crate::{hash::skyscraper::SkyscraperSponge, FieldElement},
     ark_crypto_primitives::{
         crh::{CRHScheme, TwoToOneCRHScheme},
         merkle_tree::{Config, IdentityDigestConverter},
         Error,
     },
+    ark_ff::{BigInt, PrimeField},
     rand08::Rng,
     serde::{Deserialize, Serialize},
     spongefish::{
@@ -19,26 +17,23 @@ use {
     std::borrow::Borrow,
 };
 
-/// Fast dummy compression - just adds the two inputs.
-/// WARNING: This is NOT cryptographically secure!
-#[inline(always)]
 fn compress(l: FieldElement, r: FieldElement) -> FieldElement {
-    l + r + FieldElement::from(1u64)
+    let l64 = l.into_bigint().0;
+    let r64 = r.into_bigint().0;
+    let out = skyscraper::simple::compress(l64, r64);
+    FieldElement::new(BigInt(out))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DummyCRH;
+pub struct SkyscraperCRH;
 
-impl CRHScheme for DummyCRH {
+impl CRHScheme for SkyscraperCRH {
     type Input = [FieldElement];
     type Output = FieldElement;
     type Parameters = ();
-
     fn setup<R: Rng>(_r: &mut R) -> Result<Self::Parameters, Error> {
         Ok(())
     }
-
-    #[inline(always)]
     fn evaluate<T: Borrow<Self::Input>>(
         _: &Self::Parameters,
         input: T,
@@ -53,18 +48,15 @@ impl CRHScheme for DummyCRH {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DummyTwoToOne;
+pub struct SkyscraperTwoToOne;
 
-impl TwoToOneCRHScheme for DummyTwoToOne {
+impl TwoToOneCRHScheme for SkyscraperTwoToOne {
     type Input = FieldElement;
     type Output = FieldElement;
     type Parameters = ();
-
     fn setup<R: Rng>(_r: &mut R) -> Result<Self::Parameters, Error> {
         Ok(())
     }
-
-    #[inline(always)]
     fn evaluate<T: Borrow<Self::Input>>(
         _: &Self::Parameters,
         l: T,
@@ -72,8 +64,6 @@ impl TwoToOneCRHScheme for DummyTwoToOne {
     ) -> Result<Self::Output, Error> {
         Ok(compress(*l.borrow(), *r.borrow()))
     }
-
-    #[inline(always)]
     fn compress<T: Borrow<Self::Output>>(
         p: &Self::Parameters,
         l: T,
@@ -84,35 +74,35 @@ impl TwoToOneCRHScheme for DummyTwoToOne {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DummyMerkleConfig;
+pub struct SkyscraperMerkleConfig;
 
-impl Config for DummyMerkleConfig {
+impl Config for SkyscraperMerkleConfig {
     type Leaf = [FieldElement];
     type LeafDigest = FieldElement;
     type LeafInnerDigestConverter = IdentityDigestConverter<FieldElement>;
     type InnerDigest = FieldElement;
-    type LeafHash = DummyCRH;
-    type TwoToOneHash = DummyTwoToOne;
+    type LeafHash = SkyscraperCRH;
+    type TwoToOneHash = SkyscraperTwoToOne;
 }
 
-impl whir::whir::domainsep::DigestDomainSeparator<DummyMerkleConfig>
-    for DomainSeparator<DummySponge, FieldElement>
+impl whir::whir::domainsep::DigestDomainSeparator<SkyscraperMerkleConfig>
+    for DomainSeparator<SkyscraperSponge, FieldElement>
 {
     fn add_digest(self, label: &str) -> Self {
         <Self as FieldDomainSeparator<FieldElement>>::add_scalars(self, 1, label)
     }
 }
 
-impl whir::whir::utils::DigestToUnitSerialize<DummyMerkleConfig>
-    for ProverState<DummySponge, FieldElement>
+impl whir::whir::utils::DigestToUnitSerialize<SkyscraperMerkleConfig>
+    for ProverState<SkyscraperSponge, FieldElement>
 {
     fn add_digest(&mut self, digest: FieldElement) -> ProofResult<()> {
         self.add_scalars(&[digest])
     }
 }
 
-impl whir::whir::utils::DigestToUnitDeserialize<DummyMerkleConfig>
-    for VerifierState<'_, DummySponge, FieldElement>
+impl whir::whir::utils::DigestToUnitDeserialize<SkyscraperMerkleConfig>
+    for VerifierState<'_, SkyscraperSponge, FieldElement>
 {
     fn read_digest(&mut self) -> ProofResult<FieldElement> {
         let [r] = self.next_scalars()?;

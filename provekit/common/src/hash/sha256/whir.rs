@@ -1,5 +1,5 @@
 use {
-    crate::{skyscraper::SkyscraperSponge, FieldElement},
+    crate::{hash::sha256::Sha256Sponge, FieldElement},
     ark_crypto_primitives::{
         crh::{CRHScheme, TwoToOneCRHScheme},
         merkle_tree::{Config, IdentityDigestConverter},
@@ -8,6 +8,7 @@ use {
     ark_ff::{BigInt, PrimeField},
     rand08::Rng,
     serde::{Deserialize, Serialize},
+    sha2::{Digest, Sha256 as Sha256Hasher},
     spongefish::{
         codecs::arkworks_algebra::{
             FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize,
@@ -17,17 +18,33 @@ use {
     std::borrow::Borrow,
 };
 
+fn to_bytes(x: FieldElement) -> [u8; 32] {
+    let limbs = x.into_bigint().0;
+    let mut bytes = [0u8; 32];
+    for (i, limb) in limbs.iter().enumerate() {
+        bytes[i * 8..(i + 1) * 8].copy_from_slice(&limb.to_le_bytes());
+    }
+    bytes
+}
+
 fn compress(l: FieldElement, r: FieldElement) -> FieldElement {
-    let l64 = l.into_bigint().0;
-    let r64 = r.into_bigint().0;
-    let out = skyscraper::simple::compress(l64, r64);
+    let mut hasher = Sha256Hasher::new();
+    hasher.update(&to_bytes(l));
+    hasher.update(&to_bytes(r));
+    let hash = hasher.finalize();
+    let out: [u64; 4] = hash
+        .chunks_exact(8)
+        .map(|s| u64::from_le_bytes(s.try_into().unwrap()))
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
     FieldElement::new(BigInt(out))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SkyscraperCRH;
+pub struct Sha256CRH;
 
-impl CRHScheme for SkyscraperCRH {
+impl CRHScheme for Sha256CRH {
     type Input = [FieldElement];
     type Output = FieldElement;
     type Parameters = ();
@@ -48,9 +65,9 @@ impl CRHScheme for SkyscraperCRH {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SkyscraperTwoToOne;
+pub struct Sha256TwoToOne;
 
-impl TwoToOneCRHScheme for SkyscraperTwoToOne {
+impl TwoToOneCRHScheme for Sha256TwoToOne {
     type Input = FieldElement;
     type Output = FieldElement;
     type Parameters = ();
@@ -74,35 +91,35 @@ impl TwoToOneCRHScheme for SkyscraperTwoToOne {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SkyscraperMerkleConfig;
+pub struct Sha256MerkleConfig;
 
-impl Config for SkyscraperMerkleConfig {
+impl Config for Sha256MerkleConfig {
     type Leaf = [FieldElement];
     type LeafDigest = FieldElement;
     type LeafInnerDigestConverter = IdentityDigestConverter<FieldElement>;
     type InnerDigest = FieldElement;
-    type LeafHash = SkyscraperCRH;
-    type TwoToOneHash = SkyscraperTwoToOne;
+    type LeafHash = Sha256CRH;
+    type TwoToOneHash = Sha256TwoToOne;
 }
 
-impl whir::whir::domainsep::DigestDomainSeparator<SkyscraperMerkleConfig>
-    for DomainSeparator<SkyscraperSponge, FieldElement>
+impl whir::whir::domainsep::DigestDomainSeparator<Sha256MerkleConfig>
+    for DomainSeparator<Sha256Sponge, FieldElement>
 {
     fn add_digest(self, label: &str) -> Self {
         <Self as FieldDomainSeparator<FieldElement>>::add_scalars(self, 1, label)
     }
 }
 
-impl whir::whir::utils::DigestToUnitSerialize<SkyscraperMerkleConfig>
-    for ProverState<SkyscraperSponge, FieldElement>
+impl whir::whir::utils::DigestToUnitSerialize<Sha256MerkleConfig>
+    for ProverState<Sha256Sponge, FieldElement>
 {
     fn add_digest(&mut self, digest: FieldElement) -> ProofResult<()> {
         self.add_scalars(&[digest])
     }
 }
 
-impl whir::whir::utils::DigestToUnitDeserialize<SkyscraperMerkleConfig>
-    for VerifierState<'_, SkyscraperSponge, FieldElement>
+impl whir::whir::utils::DigestToUnitDeserialize<Sha256MerkleConfig>
+    for VerifierState<'_, Sha256Sponge, FieldElement>
 {
     fn read_digest(&mut self) -> ProofResult<FieldElement> {
         let [r] = self.next_scalars()?;

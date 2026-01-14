@@ -29,6 +29,7 @@ whir.workspace = true
 # 3rd party
 anyhow.workspace = true
 sha2.workspace = true
+sha3.workspace = true
 bytes.workspace = true
 hex.workspace = true
 itertools.workspace = true
@@ -47,6 +48,7 @@ zstd.workspace = true
 default = ["hash-skyscraper"]
 hash-dummy = []
 hash-sha256 = []
+hash-keccak256 = []
 hash-skyscraper = []
 
 [lints]
