@@ -13,6 +13,22 @@ Compares preparation/proving/verification performance across different hash func
 | BLAKE3     | `hash-blake3`     | general-purpose hash                                                |
 | Poseidon   | `hash-poseidon`   | Algebraic hash, ZK-friendly, but not suitable for native operations |
 
+## Prerequisites
+
+Install the Noir toolchain:
+
+```bash
+noirup --version v1.0.0-beta.11
+```
+
+Compile the age verification circuit used by the benchmark:
+
+```bash
+cd noir-examples/noir-passport-examples/complete_age_check
+nargo compile
+cd ../../..
+```
+
 ## Running Benchmarks
 
 Make sure you are in the root directory and run the script from root. This is because paths are relative to root.
