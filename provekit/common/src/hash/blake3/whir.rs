@@ -8,12 +8,6 @@ use {
     ark_ff::{BigInt, PrimeField},
     rand08::Rng,
     serde::{Deserialize, Serialize},
-    spongefish::{
-        codecs::arkworks_algebra::{
-            FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize,
-        },
-        DomainSeparator, ProofResult, ProverState, VerifierState,
-    },
     std::borrow::Borrow,
     zerocopy::transmute,
 };
@@ -91,27 +85,4 @@ impl Config for Blake3MerkleConfig {
     type TwoToOneHash = Blake3TwoToOne;
 }
 
-impl whir::whir::domainsep::DigestDomainSeparator<Blake3MerkleConfig>
-    for DomainSeparator<Blake3Sponge, FieldElement>
-{
-    fn add_digest(self, label: &str) -> Self {
-        <Self as FieldDomainSeparator<FieldElement>>::add_scalars(self, 1, label)
-    }
-}
-
-impl whir::whir::utils::DigestToUnitSerialize<Blake3MerkleConfig>
-    for ProverState<Blake3Sponge, FieldElement>
-{
-    fn add_digest(&mut self, digest: FieldElement) -> ProofResult<()> {
-        self.add_scalars(&[digest])
-    }
-}
-
-impl whir::whir::utils::DigestToUnitDeserialize<Blake3MerkleConfig>
-    for VerifierState<'_, Blake3Sponge, FieldElement>
-{
-    fn read_digest(&mut self) -> ProofResult<FieldElement> {
-        let [r] = self.next_scalars()?;
-        Ok(r)
-    }
-}
+crate::hash::impl_whir_digest_traits!(Blake3MerkleConfig, Blake3Sponge);

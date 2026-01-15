@@ -10,12 +10,6 @@ use {
     light_poseidon::{Poseidon, PoseidonHasher},
     rand08::Rng,
     serde::{Deserialize, Serialize},
-    spongefish::{
-        codecs::arkworks_algebra::{
-            FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize,
-        },
-        DomainSeparator, ProofResult, ProverState, VerifierState,
-    },
     std::borrow::Borrow,
 };
 
@@ -101,27 +95,4 @@ impl Config for PoseidonMerkleConfig {
     type TwoToOneHash = PoseidonTwoToOne;
 }
 
-impl whir::whir::domainsep::DigestDomainSeparator<PoseidonMerkleConfig>
-    for DomainSeparator<PoseidonSponge, FieldElement>
-{
-    fn add_digest(self, label: &str) -> Self {
-        <Self as FieldDomainSeparator<FieldElement>>::add_scalars(self, 1, label)
-    }
-}
-
-impl whir::whir::utils::DigestToUnitSerialize<PoseidonMerkleConfig>
-    for ProverState<PoseidonSponge, FieldElement>
-{
-    fn add_digest(&mut self, digest: FieldElement) -> ProofResult<()> {
-        self.add_scalars(&[digest])
-    }
-}
-
-impl whir::whir::utils::DigestToUnitDeserialize<PoseidonMerkleConfig>
-    for VerifierState<'_, PoseidonSponge, FieldElement>
-{
-    fn read_digest(&mut self) -> ProofResult<FieldElement> {
-        let [r] = self.next_scalars()?;
-        Ok(r)
-    }
-}
+crate::hash::impl_whir_digest_traits!(PoseidonMerkleConfig, PoseidonSponge);

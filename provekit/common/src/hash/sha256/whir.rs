@@ -9,12 +9,6 @@ use {
     rand08::Rng,
     serde::{Deserialize, Serialize},
     sha2::{Digest, Sha256 as Sha256Hasher},
-    spongefish::{
-        codecs::arkworks_algebra::{
-            FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize,
-        },
-        DomainSeparator, ProofResult, ProverState, VerifierState,
-    },
     std::borrow::Borrow,
     zerocopy::transmute,
 };
@@ -86,27 +80,4 @@ impl Config for Sha256MerkleConfig {
     type TwoToOneHash = Sha256TwoToOne;
 }
 
-impl whir::whir::domainsep::DigestDomainSeparator<Sha256MerkleConfig>
-    for DomainSeparator<Sha256Sponge, FieldElement>
-{
-    fn add_digest(self, label: &str) -> Self {
-        <Self as FieldDomainSeparator<FieldElement>>::add_scalars(self, 1, label)
-    }
-}
-
-impl whir::whir::utils::DigestToUnitSerialize<Sha256MerkleConfig>
-    for ProverState<Sha256Sponge, FieldElement>
-{
-    fn add_digest(&mut self, digest: FieldElement) -> ProofResult<()> {
-        self.add_scalars(&[digest])
-    }
-}
-
-impl whir::whir::utils::DigestToUnitDeserialize<Sha256MerkleConfig>
-    for VerifierState<'_, Sha256Sponge, FieldElement>
-{
-    fn read_digest(&mut self) -> ProofResult<FieldElement> {
-        let [r] = self.next_scalars()?;
-        Ok(r)
-    }
-}
+crate::hash::impl_whir_digest_traits!(Sha256MerkleConfig, Sha256Sponge);

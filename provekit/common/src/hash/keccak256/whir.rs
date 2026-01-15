@@ -9,12 +9,6 @@ use {
     rand08::Rng,
     serde::{Deserialize, Serialize},
     sha3::{Digest, Keccak256},
-    spongefish::{
-        codecs::arkworks_algebra::{
-            FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize,
-        },
-        DomainSeparator, ProofResult, ProverState, VerifierState,
-    },
     std::borrow::Borrow,
     zerocopy::transmute,
 };
@@ -91,27 +85,4 @@ impl Config for Keccak256MerkleConfig {
     type TwoToOneHash = Keccak256TwoToOne;
 }
 
-impl whir::whir::domainsep::DigestDomainSeparator<Keccak256MerkleConfig>
-    for DomainSeparator<Keccak256Sponge, FieldElement>
-{
-    fn add_digest(self, label: &str) -> Self {
-        <Self as FieldDomainSeparator<FieldElement>>::add_scalars(self, 1, label)
-    }
-}
-
-impl whir::whir::utils::DigestToUnitSerialize<Keccak256MerkleConfig>
-    for ProverState<Keccak256Sponge, FieldElement>
-{
-    fn add_digest(&mut self, digest: FieldElement) -> ProofResult<()> {
-        self.add_scalars(&[digest])
-    }
-}
-
-impl whir::whir::utils::DigestToUnitDeserialize<Keccak256MerkleConfig>
-    for VerifierState<'_, Keccak256Sponge, FieldElement>
-{
-    fn read_digest(&mut self) -> ProofResult<FieldElement> {
-        let [r] = self.next_scalars()?;
-        Ok(r)
-    }
-}
+crate::hash::impl_whir_digest_traits!(Keccak256MerkleConfig, Keccak256Sponge);

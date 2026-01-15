@@ -10,12 +10,6 @@ use {
     },
     rand08::Rng,
     serde::{Deserialize, Serialize},
-    spongefish::{
-        codecs::arkworks_algebra::{
-            FieldDomainSeparator, FieldToUnitDeserialize, FieldToUnitSerialize,
-        },
-        DomainSeparator, ProofResult, ProverState, VerifierState,
-    },
     std::borrow::Borrow,
 };
 
@@ -95,27 +89,4 @@ impl Config for DummyMerkleConfig {
     type TwoToOneHash = DummyTwoToOne;
 }
 
-impl whir::whir::domainsep::DigestDomainSeparator<DummyMerkleConfig>
-    for DomainSeparator<DummySponge, FieldElement>
-{
-    fn add_digest(self, label: &str) -> Self {
-        <Self as FieldDomainSeparator<FieldElement>>::add_scalars(self, 1, label)
-    }
-}
-
-impl whir::whir::utils::DigestToUnitSerialize<DummyMerkleConfig>
-    for ProverState<DummySponge, FieldElement>
-{
-    fn add_digest(&mut self, digest: FieldElement) -> ProofResult<()> {
-        self.add_scalars(&[digest])
-    }
-}
-
-impl whir::whir::utils::DigestToUnitDeserialize<DummyMerkleConfig>
-    for VerifierState<'_, DummySponge, FieldElement>
-{
-    fn read_digest(&mut self) -> ProofResult<FieldElement> {
-        let [r] = self.next_scalars()?;
-        Ok(r)
-    }
-}
+crate::hash::impl_whir_digest_traits!(DummyMerkleConfig, DummySponge);
