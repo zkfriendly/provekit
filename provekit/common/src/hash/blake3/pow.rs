@@ -1,40 +1,5 @@
-use {crate::hash::pow_leading_zeros, spongefish_pow::PowStrategy};
-
-/// BLAKE3 proof of work
-#[derive(Clone, Copy)]
-pub struct Blake3PoW {
-    challenge: [u8; 32],
-    bits:      u32,
-}
-
-impl Blake3PoW {
-    fn check_pow(&self, nonce: u64) -> bool {
-        let hash = blake3::Hasher::new()
-            .update(&self.challenge)
-            .update(&nonce.to_le_bytes())
-            .finalize();
-        u64::from_be_bytes(hash.as_bytes()[..8].try_into().unwrap()).leading_zeros() >= self.bits
-    }
-}
-
-impl PowStrategy for Blake3PoW {
-    fn new(challenge: [u8; 32], bits: f64) -> Self {
-        assert!((0.0..64.0).contains(&bits), "bits must be smaller than 64");
-        Self {
-            challenge,
-            bits: bits as u32,
-        }
-    }
-
-    fn check(&mut self, nonce: u64) -> bool {
-        self.check_pow(nonce)
-    }
-
-    fn solve(&mut self) -> Option<u64> {
-        let this = *self;
-        Some(pow_leading_zeros::solve(|nonce| this.check_pow(nonce)))
-    }
-}
+// Re-export SIMD-accelerated Blake3 PoW from spongefish-pow
+pub use spongefish_pow::blake3::Blake3PoW;
 
 #[test]
 fn test_pow_blake3() {
