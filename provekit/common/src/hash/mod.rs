@@ -24,10 +24,7 @@ macro_rules! impl_whir_digest_traits {
         impl whir::whir::utils::DigestToUnitSerialize<$merkle_config>
             for spongefish::ProverState<$sponge, $crate::FieldElement>
         {
-            fn add_digest(
-                &mut self,
-                digest: $crate::FieldElement,
-            ) -> spongefish::ProofResult<()> {
+            fn add_digest(&mut self, digest: $crate::FieldElement) -> spongefish::ProofResult<()> {
                 <Self as spongefish::codecs::arkworks_algebra::FieldToUnitSerialize<
                     $crate::FieldElement,
                 >>::add_scalars(self, &[digest])
