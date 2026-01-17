@@ -10,11 +10,11 @@ repository.workspace = true
 
 [dependencies]
 # Workspace crates
-provekit-common.workspace = true
+provekit-common = { workspace = true, default-features = false }
 provekit-gnark.workspace = true
-provekit-prover.workspace = true
+provekit-prover = { workspace = true, default-features = false }
 provekit-r1cs-compiler.workspace = true
-provekit-verifier.workspace = true
+provekit-verifier = { workspace = true, default-features = false }
 
 # Noir language
 acir.workspace = true
@@ -33,6 +33,12 @@ tracing-tracy = { workspace = true, optional = true, features = ["default", "sam
 workspace = true
 
 [features]
-default = ["profiling-allocator"]
+default = ["profiling-allocator", "hash-skyscraper"]
 profiling-allocator = []
 tracy = ["dep:tracing-tracy"]
+hash-dummy = ["provekit-common/hash-dummy", "provekit-prover/hash-dummy", "provekit-verifier/hash-dummy"]
+hash-sha256 = ["provekit-common/hash-sha256", "provekit-prover/hash-sha256", "provekit-verifier/hash-sha256"]
+hash-keccak256 = ["provekit-common/hash-keccak256", "provekit-prover/hash-keccak256", "provekit-verifier/hash-keccak256"]
+hash-blake3 = ["provekit-common/hash-blake3", "provekit-prover/hash-blake3", "provekit-verifier/hash-blake3"]
+hash-poseidon = ["provekit-common/hash-poseidon", "provekit-prover/hash-poseidon", "provekit-verifier/hash-poseidon"]
+hash-skyscraper = ["provekit-common/hash-skyscraper", "provekit-prover/hash-skyscraper", "provekit-verifier/hash-skyscraper"]

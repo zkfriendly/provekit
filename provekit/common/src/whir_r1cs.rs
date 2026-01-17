@@ -1,6 +1,29 @@
+#[cfg(feature = "hash-blake3")]
+pub use crate::hash::blake3::{
+    Blake3MerkleConfig as MerkleConfig, Blake3PoW as PoW, Blake3Sponge as Sponge,
+};
+#[cfg(feature = "hash-dummy")]
+pub use crate::hash::dummy::{
+    DummyMerkleConfig as MerkleConfig, DummyPoW as PoW, DummySponge as Sponge,
+};
+#[cfg(feature = "hash-keccak256")]
+pub use crate::hash::keccak256::{
+    Keccak256MerkleConfig as MerkleConfig, Keccak256PoW as PoW, Keccak256Sponge as Sponge,
+};
+#[cfg(feature = "hash-poseidon")]
+pub use crate::hash::poseidon::{
+    PoseidonMerkleConfig as MerkleConfig, PoseidonPoW as PoW, PoseidonSponge as Sponge,
+};
+#[cfg(feature = "hash-sha256")]
+pub use crate::hash::sha256::{
+    Sha256MerkleConfig as MerkleConfig, Sha256PoW as PoW, Sha256Sponge as Sponge,
+};
+#[cfg(feature = "hash-skyscraper")]
+pub use crate::hash::skyscraper::{
+    SkyscraperMerkleConfig as MerkleConfig, SkyscraperPoW as PoW, SkyscraperSponge as Sponge,
+};
 use {
     crate::{
-        skyscraper::{SkyscraperMerkleConfig, SkyscraperPoW, SkyscraperSponge},
         utils::{serde_hex, sumcheck::SumcheckIOPattern},
         witness::WitnessIOPattern,
         FieldElement,
@@ -12,8 +35,8 @@ use {
     whir::whir::{domainsep::WhirDomainSeparator, parameters::WhirConfig as GenericWhirConfig},
 };
 
-pub type WhirConfig = GenericWhirConfig<FieldElement, SkyscraperMerkleConfig, SkyscraperPoW>;
-pub type IOPattern = DomainSeparator<SkyscraperSponge, FieldElement>;
+pub type WhirConfig = GenericWhirConfig<FieldElement, MerkleConfig, PoW>;
+pub type IOPattern = DomainSeparator<Sponge, FieldElement>;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct WhirR1CSScheme {
