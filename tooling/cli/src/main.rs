@@ -22,6 +22,31 @@ static ALLOCATOR: ProfilingAllocator = ProfilingAllocator::new();
 
 fn main() -> Result<()> {
     let args = argh::from_env::<cmd::Args>();
+
+    // Configure rayon thread pool.
+    // Default to half the available CPUs, which reduces scheduler overhead
+    // (context switches, softirqs) on CPU-bound proving workloads.
+    // The --threads flag takes priority, then RAYON_NUM_THREADS env var,
+    // then the heuristic default.
+    let thread_count = if let Some(n) = args.threads {
+        n
+    } else if std::env::var("RAYON_NUM_THREADS").is_ok() {
+        // Let rayon handle the env var by not setting num_threads.
+        0
+    } else {
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        // Half the CPUs, clamped to [1, cpus].
+        (cpus / 2).max(1)
+    };
+    if thread_count > 0 {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(thread_count)
+            .build_global()
+            .ok(); // Ignore error if pool already initialized.
+    }
+
     let subscriber = Registry::default().with(SpanStats);
 
     #[cfg(feature = "tracy")]

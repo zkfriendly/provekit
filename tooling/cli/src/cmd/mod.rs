@@ -17,6 +17,12 @@ pub struct Args {
     #[argh(subcommand)]
     subcommand: Commands,
 
+    /// number of worker threads for parallel operations.
+    /// Defaults to half the available CPUs (which reduces scheduler overhead).
+    /// Overrides RAYON_NUM_THREADS if set.
+    #[argh(option, short = 'j')]
+    pub threads: Option<usize>,
+
     /// enable Tracy profiling
     #[cfg(feature = "tracy")]
     #[argh(switch)]
