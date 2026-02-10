@@ -11,8 +11,8 @@ use {std::sync::atomic::AtomicBool, tracing_tracy::client::sys as tracy_sys};
 /// the same VMA). We use 64 KiB to be safely below the mmap threshold.
 const PREFAULT_THRESHOLD: usize = 64 * 1024;
 
-/// Hint the kernel to use huge pages and pre-fault all pages in the
-/// allocation so that later parallel writes don't contend on the PTE lock.
+/// Pre-fault all pages in a large allocation so that later parallel writes
+/// from rayon threads don't contend on the kernel's page-table lock.
 ///
 /// # Safety
 /// `ptr` must be a valid allocation of at least `size` bytes.
@@ -35,7 +35,25 @@ unsafe fn prefault(ptr: *mut u8, size: usize) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+/// On macOS / other Unix: no MADV_POPULATE_WRITE or MADV_HUGEPAGE.
+/// Manually touch every page to force physical allocation before rayon
+/// workers hit them concurrently. Uses 4 KiB stride (safe on both 4 KiB
+/// and 16 KiB page systems — just touches some pages more than once on
+/// the latter).
+#[cfg(all(unix, not(target_os = "linux")))]
+unsafe fn prefault(ptr: *mut u8, size: usize) {
+    if size >= PREFAULT_THRESHOLD && !ptr.is_null() {
+        let page = 4096usize;
+        let mut offset = 0;
+        while offset < size {
+            // Volatile write ensures the compiler doesn't elide the store.
+            core::ptr::write_volatile(ptr.add(offset), 0u8);
+            offset += page;
+        }
+    }
+}
+
+#[cfg(not(unix))]
 unsafe fn prefault(_ptr: *mut u8, _size: usize) {}
 
 /// Custom allocator that keeps track of statistics to see program memory
@@ -186,7 +204,9 @@ unsafe impl GlobalAlloc for ProfilingAllocator {
         let ptr = SystemAlloc.realloc(ptr, old_layout, new_size);
         let old_size = old_layout.size();
         if new_size > old_size {
-            prefault(ptr, new_size);
+            // Only prefault the NEW region — the first old_size bytes contain
+            // valid data that was moved/copied by realloc.
+            prefault(ptr.add(old_size), new_size - old_size);
             let diff = new_size - old_size;
             let current = self
                 .current
