@@ -41,17 +41,7 @@ unsafe fn prefault(ptr: *mut u8, size: usize) {
 /// and 16 KiB page systems — just touches some pages more than once on
 /// the latter).
 #[cfg(all(unix, not(target_os = "linux")))]
-unsafe fn prefault(ptr: *mut u8, size: usize) {
-    if size >= PREFAULT_THRESHOLD && !ptr.is_null() {
-        let page = 4096usize;
-        let mut offset = 0;
-        while offset < size {
-            // Volatile write ensures the compiler doesn't elide the store.
-            core::ptr::write_volatile(ptr.add(offset), 0u8);
-            offset += page;
-        }
-    }
-}
+unsafe fn prefault(ptr: *mut u8, size: usize) {}
 
 #[cfg(not(unix))]
 unsafe fn prefault(_ptr: *mut u8, _size: usize) {}
