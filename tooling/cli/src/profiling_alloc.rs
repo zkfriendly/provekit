@@ -37,11 +37,32 @@ unsafe fn prefault(ptr: *mut u8, size: usize) {
 
 /// On macOS / other Unix: no MADV_POPULATE_WRITE or MADV_HUGEPAGE.
 /// Manually touch every page to force physical allocation before rayon
-/// workers hit them concurrently. Uses 4 KiB stride (safe on both 4 KiB
-/// and 16 KiB page systems — just touches some pages more than once on
-/// the latter).
+/// workers hit them concurrently. We use the runtime page size from
+/// `sysconf(_SC_PAGESIZE)` and touch one byte per page.
 #[cfg(all(unix, not(target_os = "linux")))]
-unsafe fn prefault(ptr: *mut u8, size: usize) {}
+unsafe fn prefault(ptr: *mut u8, size: usize) {
+    if size < PREFAULT_THRESHOLD || ptr.is_null() {
+        return;
+    }
+
+    let page_size_raw = libc::sysconf(libc::_SC_PAGESIZE);
+    let page_size = if page_size_raw > 0 {
+        usize::try_from(page_size_raw).unwrap_or(4096)
+    } else {
+        4096
+    };
+
+    // Touch one byte per page to force allocation now instead of letting
+    // many worker threads trigger first-touch page faults concurrently.
+    let mut offset = 0usize;
+    while offset < size {
+        ptr.add(offset).write_volatile(0u8);
+        offset = offset.saturating_add(page_size);
+    }
+
+    // Ensure the trailing partial page is touched as well.
+    ptr.add(size - 1).write_volatile(0u8);
+}
 
 #[cfg(not(unix))]
 unsafe fn prefault(_ptr: *mut u8, _size: usize) {}
