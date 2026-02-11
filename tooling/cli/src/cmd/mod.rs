@@ -18,8 +18,9 @@ pub struct Args {
     subcommand: Commands,
 
     /// number of worker threads for parallel operations.
-    /// Defaults to half the available CPUs (which reduces scheduler overhead).
-    /// Overrides RAYON_NUM_THREADS if set.
+    /// Defaults to all available CPUs (or RAYON_NUM_THREADS env var).
+    /// On Linux, fewer threads (e.g. half the CPUs) can reduce scheduler
+    /// overhead and improve performance.
     #[argh(option, short = 'j')]
     pub threads: Option<usize>,
 
