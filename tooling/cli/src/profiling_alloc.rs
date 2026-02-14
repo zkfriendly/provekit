@@ -5,6 +5,35 @@ use std::{
 #[cfg(feature = "tracy")]
 use {std::sync::atomic::AtomicBool, tracing_tracy::client::sys as tracy_sys};
 
+const PREFAULT_THRESHOLD: usize = 128 * 1024;
+
+/// Hint the kernel to use huge pages and pre-fault all pages in the
+/// allocation so that later parallel writes don't contend on the PTE lock.
+///
+/// # Safety
+/// `ptr` must be a valid allocation of at least `size` bytes.
+#[cfg(target_os = "linux")]
+unsafe fn prefault(ptr: *mut u8, size: usize) {
+    if size >= PREFAULT_THRESHOLD && !ptr.is_null() {
+        // Page-align address down and size up for madvise.
+        let page = 4096usize;
+        let aligned_start = (ptr as usize) & !(page - 1);
+        let aligned_end = ((ptr as usize) + size + page - 1) & !(page - 1);
+        let aligned_ptr = aligned_start as *mut libc::c_void;
+        let aligned_size = aligned_end - aligned_start;
+
+        // Use transparent huge pages (2 MiB) to reduce TLB pressure.
+        libc::madvise(aligned_ptr, aligned_size, libc::MADV_HUGEPAGE);
+        // Pre-fault pages with write semantics (Linux 5.14+).
+        // This forces physical page allocation so rayon threads don't
+        // all hit anonymous page faults simultaneously.
+        libc::madvise(aligned_ptr, aligned_size, libc::MADV_POPULATE_WRITE);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+unsafe fn prefault(_ptr: *mut u8, _size: usize) {}
+
 /// Custom allocator that keeps track of statistics to see program memory
 /// consumption.
 pub struct ProfilingAllocator {
@@ -117,6 +146,7 @@ unsafe impl GlobalAlloc for ProfilingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = SystemAlloc.alloc(layout);
         let size = layout.size();
+        prefault(ptr, size);
         let current = self
             .current
             .fetch_add(size, Ordering::SeqCst)
@@ -136,6 +166,7 @@ unsafe impl GlobalAlloc for ProfilingAllocator {
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
         let ptr = SystemAlloc.alloc_zeroed(layout);
         let size = layout.size();
+        prefault(ptr, size);
         let current = self
             .current
             .fetch_add(size, Ordering::SeqCst)
@@ -151,6 +182,7 @@ unsafe impl GlobalAlloc for ProfilingAllocator {
         let ptr = SystemAlloc.realloc(ptr, old_layout, new_size);
         let old_size = old_layout.size();
         if new_size > old_size {
+            prefault(ptr, new_size);
             let diff = new_size - old_size;
             let current = self
                 .current
