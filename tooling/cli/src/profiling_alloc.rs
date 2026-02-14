@@ -1,7 +1,13 @@
-use std::{
-    alloc::{GlobalAlloc, Layout, System as SystemAlloc},
-    sync::atomic::{AtomicUsize, Ordering},
+use {
+    mimalloc::MiMalloc,
+    std::{
+        alloc::{GlobalAlloc, Layout},
+        sync::atomic::{AtomicUsize, Ordering},
+    },
 };
+
+static BACKING: MiMalloc = MiMalloc;
+
 #[cfg(feature = "tracy")]
 use {std::sync::atomic::AtomicBool, tracing_tracy::client::sys as tracy_sys};
 
@@ -144,7 +150,7 @@ impl ProfilingAllocator {
 #[allow(unsafe_code)]
 unsafe impl GlobalAlloc for ProfilingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = SystemAlloc.alloc(layout);
+        let ptr = BACKING.alloc(layout);
         let size = layout.size();
         prefault(ptr, size);
         let current = self
@@ -160,11 +166,11 @@ unsafe impl GlobalAlloc for ProfilingAllocator {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         self.current.fetch_sub(layout.size(), Ordering::SeqCst);
         self.tracy_dealloc(ptr);
-        SystemAlloc.dealloc(ptr, layout);
+        BACKING.dealloc(ptr, layout);
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = SystemAlloc.alloc_zeroed(layout);
+        let ptr = BACKING.alloc_zeroed(layout);
         let size = layout.size();
         prefault(ptr, size);
         let current = self
@@ -179,7 +185,7 @@ unsafe impl GlobalAlloc for ProfilingAllocator {
 
     unsafe fn realloc(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> *mut u8 {
         self.tracy_dealloc(ptr);
-        let ptr = SystemAlloc.realloc(ptr, old_layout, new_size);
+        let ptr = BACKING.realloc(ptr, old_layout, new_size);
         let old_size = old_layout.size();
         if new_size > old_size {
             prefault(ptr, new_size);
