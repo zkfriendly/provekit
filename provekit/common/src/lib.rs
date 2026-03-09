@@ -56,6 +56,12 @@ pub fn register_ntt() {
             }
         };
         whir::algebra::ntt::NTT.insert(ntt);
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let accelerator: Arc<dyn whir::protocols::irs_commit::AcceleratedCommitter<FieldElement>> =
+                Arc::new(wgpu_ntt::WgpuBn254Ntt);
+            whir::protocols::irs_commit::ACCELERATORS.insert(accelerator);
+        }
 
         let skyscraper: Arc<dyn whir::hash::HashEngine> =
             Arc::new(skyscraper::SkyscraperHashEngine);

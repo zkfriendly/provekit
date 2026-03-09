@@ -7,6 +7,7 @@ authors.workspace = true
 license.workspace = true
 homepage.workspace = true
 repository.workspace = true
+build = "build.rs"
 
 [dependencies]
 # Workspace crates
@@ -40,12 +41,14 @@ serde_json.workspace = true
 sha2.workspace = true
 tracing.workspace = true
 pollster = "0.4"
-shaderc = "0.10"
 wgpu = { version = "28", features = ["spirv"] }
 xz2.workspace = true
 zerocopy.workspace = true
 zeroize.workspace = true
 zstd.workspace = true
+
+[build-dependencies]
+shaderc = "0.10"
 
 [lints]
 workspace = true

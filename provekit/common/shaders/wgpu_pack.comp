@@ -1,0 +1,50 @@
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+struct PackParams {
+    uint poly_size;
+    uint row_len;
+    uint interleaving_depth;
+    uint message_length;
+    uint coeff_bits;
+    uint expansion_bits;
+    uint total_elements;
+    uint _padding;
+};
+
+layout(std430, binding = 0) readonly buffer CoeffsBuffer {
+    Fe coeffs[];
+};
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    Fe output_values[];
+};
+
+layout(std430, binding = 2) readonly buffer ParamsBuffer {
+    PackParams params;
+};
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= params.total_elements) {
+        return;
+    }
+
+    uint row = gid / params.row_len;
+    uint position = gid - row * params.row_len;
+    uint expansion_mask = (1u << params.expansion_bits) - 1u;
+    if ((position & expansion_mask) != 0u) {
+        for (uint i = 0u; i < 8u; ++i) {
+            output_values[gid].limbs[i] = 0u;
+        }
+        return;
+    }
+
+    uint poly_index = row / params.interleaving_depth;
+    uint block_index = row - poly_index * params.interleaving_depth;
+    uint packed_index = position >> params.expansion_bits;
+    uint coeff_index = params.coeff_bits == 0u
+        ? 0u
+        : (reverse_bits_u32(packed_index) >> (32u - params.coeff_bits));
+    uint src = poly_index * params.poly_size + block_index * params.message_length + coeff_index;
+    output_values[gid] = coeffs[src];
+}

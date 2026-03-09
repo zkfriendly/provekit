@@ -1,0 +1,69 @@
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+struct Radix4Params {
+    uint total_quads;
+    uint row_len;
+    uint quarter_len;
+    uint outer_step;
+};
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    Fe input_values[];
+};
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    Fe output_values[];
+};
+
+layout(std430, binding = 2) readonly buffer RootsBuffer {
+    Fe roots[];
+};
+
+layout(std430, binding = 3) readonly buffer ParamsBuffer {
+    Radix4Params params;
+};
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= params.total_quads) {
+        return;
+    }
+
+    uint quads_per_row = params.row_len >> 2u;
+    uint row = gid / quads_per_row;
+    uint local = gid - row * quads_per_row;
+    uint group = local / params.quarter_len;
+    uint k = local - group * params.quarter_len;
+
+    uint base = row * params.row_len + group * (params.quarter_len << 2u) + k;
+    uint i0 = base;
+    uint i1 = base + params.quarter_len;
+    uint i2 = i1 + params.quarter_len;
+    uint i3 = i2 + params.quarter_len;
+
+    uint inner_step = params.outer_step << 1u;
+    Fe a0 = input_values[i0];
+    Fe a1 = input_values[i1];
+    Fe a2 = input_values[i2];
+    Fe a3 = input_values[i3];
+
+    Fe inner_twiddle = roots[k * inner_step];
+    Fe left = mont_mul(a1, inner_twiddle);
+    Fe right = mont_mul(a3, inner_twiddle);
+
+    Fe u0 = add_mod(a0, left);
+    Fe u1 = sub_mod(a0, left);
+    Fe u2 = add_mod(a2, right);
+    Fe u3 = sub_mod(a2, right);
+
+    Fe outer_lo_twiddle = roots[k * params.outer_step];
+    Fe outer_hi_twiddle = roots[(k + params.quarter_len) * params.outer_step];
+
+    Fe v0 = mont_mul(u2, outer_lo_twiddle);
+    Fe v1 = mont_mul(u3, outer_hi_twiddle);
+
+    output_values[i0] = add_mod(u0, v0);
+    output_values[i2] = sub_mod(u0, v0);
+    output_values[i1] = add_mod(u1, v1);
+    output_values[i3] = sub_mod(u1, v1);
+}

@@ -1,0 +1,47 @@
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+struct StageParams {
+    uint total_butterflies;
+    uint row_len;
+    uint half_len;
+    uint step;
+};
+
+layout(std430, binding = 0) readonly buffer InputBuffer {
+    Fe input_values[];
+};
+
+layout(std430, binding = 1) buffer OutputBuffer {
+    Fe output_values[];
+};
+
+layout(std430, binding = 2) readonly buffer RootsBuffer {
+    Fe roots[];
+};
+
+layout(std430, binding = 3) readonly buffer ParamsBuffer {
+    StageParams params;
+};
+
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= params.total_butterflies) {
+        return;
+    }
+
+    uint butterflies_per_row = params.row_len >> 1u;
+    uint row = gid / butterflies_per_row;
+    uint local = gid - row * butterflies_per_row;
+    uint group = local / params.half_len;
+    uint k = local - group * params.half_len;
+
+    uint i0 = row * params.row_len + group * (params.half_len << 1u) + k;
+    uint i1 = i0 + params.half_len;
+
+    Fe even = input_values[i0];
+    Fe odd = input_values[i1];
+    Fe twiddled = mont_mul(odd, roots[k * params.step]);
+
+    output_values[i0] = add_mod(even, twiddled);
+    output_values[i1] = sub_mod(even, twiddled);
+}
