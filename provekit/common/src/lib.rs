@@ -1,8 +1,4 @@
 pub mod file;
-#[cfg(target_os = "macos")]
-mod metal_ntt;
-#[cfg(target_os = "macos")]
-mod metal_sha2;
 mod interner;
 mod noir_proof_scheme;
 pub mod prefix_covector;
@@ -12,6 +8,8 @@ pub mod skyscraper;
 pub mod sparse_matrix;
 pub mod utils;
 mod verifier;
+#[cfg(not(target_arch = "wasm32"))]
+mod wgpu_ntt;
 mod whir_r1cs;
 pub mod witness;
 
@@ -42,37 +40,22 @@ pub type TranscriptSponge = spongefish::instantiations::SHA256;
 /// Must be called once before any prove/verify operations.
 /// Idempotent — safe to call multiple times.
 pub fn register_ntt() {
-    use std::{env, sync::{Arc, Once}};
+    use std::sync::{Arc, Once};
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let ntt: Arc<dyn whir::algebra::ntt::ReedSolomon<FieldElement>> = {
-            #[cfg(target_os = "macos")]
+            #[cfg(not(target_arch = "wasm32"))]
             {
-                let metal = metal_ntt::MetalBn254Ntt::new()
-                    .unwrap_or_else(|err| panic!("failed to initialize Metal BN254 NTT: {err}"));
-                let accelerator: Arc<
-                    dyn whir::protocols::irs_commit::AcceleratedCommitter<FieldElement>,
-                > = Arc::new(metal);
-                whir::protocols::irs_commit::ACCELERATORS.insert(accelerator);
-                Arc::new(metal)
+                let gpu = wgpu_ntt::WgpuBn254Ntt::new()
+                    .unwrap_or_else(|err| panic!("failed to initialize WGPU BN254 NTT: {err}"));
+                Arc::new(gpu)
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_arch = "wasm32")]
             {
-                Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default())
+                panic!("WGPU BN254 NTT is not supported on wasm32")
             }
         };
         whir::algebra::ntt::NTT.insert(ntt);
-
-        #[cfg(target_os = "macos")]
-        if env::var_os("PROVEKIT_ENABLE_METAL_SHA2_ENGINE").is_some() {
-            match metal_sha2::MetalSha2HashEngine::new() {
-                Ok(engine) => {
-                    let sha2: Arc<dyn whir::hash::HashEngine> = Arc::new(engine);
-                    whir::hash::ENGINES.register(sha2);
-                }
-                Err(err) => tracing::warn!("failed to initialize Metal SHA2 backend: {err}"),
-            }
-        }
 
         let skyscraper: Arc<dyn whir::hash::HashEngine> =
             Arc::new(skyscraper::SkyscraperHashEngine);
