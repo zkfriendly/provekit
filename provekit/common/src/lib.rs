@@ -1,6 +1,10 @@
 pub mod file;
 pub mod hash_config;
 mod interner;
+#[cfg(target_os = "macos")]
+mod metal_ntt;
+#[cfg(target_os = "macos")]
+mod metal_sha2;
 mod noir_proof_scheme;
 pub mod optimize;
 pub mod prefix_covector;
@@ -37,16 +41,42 @@ pub use {
 /// Must be called once before any prove/verify operations.
 /// Idempotent — safe to call multiple times.
 pub fn register_ntt() {
-    use std::sync::{Arc, Once};
+    use std::{
+        env,
+        sync::{Arc, Once},
+    };
+
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        // Register NTT for polynomial operations
-        let ntt: Arc<dyn whir::algebra::ntt::ReedSolomon<FieldElement>> =
-            Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default());
+        let ntt: Arc<dyn whir::algebra::ntt::ReedSolomon<FieldElement>> = {
+            #[cfg(target_os = "macos")]
+            {
+                let metal = metal_ntt::MetalBn254Ntt::new()
+                    .unwrap_or_else(|err| panic!("failed to initialize Metal BN254 NTT: {err}"));
+                let accelerator: Arc<
+                    dyn whir::protocols::irs_commit::AcceleratedCommitter<FieldElement>,
+                > = Arc::new(metal);
+                whir::protocols::irs_commit::ACCELERATORS.insert(accelerator);
+                Arc::new(metal)
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default())
+            }
+        };
         whir::algebra::ntt::NTT.insert(ntt);
 
-        // Register Skyscraper (ProveKit-specific); WHIR's built-in engines
-        // (SHA2, Keccak, Blake3, etc.) are pre-registered via whir::hash::ENGINES.
+        #[cfg(target_os = "macos")]
+        if env::var_os("PROVEKIT_ENABLE_METAL_SHA2_ENGINE").is_some() {
+            match metal_sha2::MetalSha2HashEngine::new() {
+                Ok(engine) => {
+                    let sha2: Arc<dyn whir::hash::HashEngine> = Arc::new(engine);
+                    whir::hash::ENGINES.register(sha2);
+                }
+                Err(err) => tracing::warn!("failed to initialize Metal SHA2 backend: {err}"),
+            }
+        }
+
         whir::hash::ENGINES.register(Arc::new(skyscraper::SkyscraperHashEngine));
     });
 }

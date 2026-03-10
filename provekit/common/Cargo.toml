@@ -41,6 +41,7 @@ rayon.workspace = true
 ruint.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 tracing.workspace = true
 xz2.workspace = true
 zerocopy.workspace = true
@@ -48,6 +49,9 @@ zeroize.workspace = true
 mavros-vm.workspace = true
 mavros-artifacts.workspace = true
 zstd.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "0.33"
 
 [lints]
 workspace = true
