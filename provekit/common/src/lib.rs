@@ -51,13 +51,22 @@ pub fn register_ntt() {
         let ntt: Arc<dyn whir::algebra::ntt::ReedSolomon<FieldElement>> = {
             #[cfg(target_os = "macos")]
             {
-                let metal = metal_ntt::MetalBn254Ntt::new()
-                    .unwrap_or_else(|err| panic!("failed to initialize Metal BN254 NTT: {err}"));
-                let accelerator: Arc<
-                    dyn whir::protocols::irs_commit::AcceleratedCommitter<FieldElement>,
-                > = Arc::new(metal);
-                whir::protocols::irs_commit::ACCELERATORS.insert(accelerator);
-                Arc::new(metal)
+                match metal_ntt::MetalBn254Ntt::new() {
+                    Ok(metal) => {
+                        let accelerator: Arc<
+                            dyn whir::protocols::irs_commit::AcceleratedCommitter<FieldElement>,
+                        > = Arc::new(metal);
+                        whir::protocols::irs_commit::ACCELERATORS.insert(accelerator);
+                        Arc::new(metal)
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            "failed to initialize Metal BN254 NTT backend: {err}; falling back to \
+                             CPU NTT"
+                        );
+                        Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default())
+                    }
+                }
             }
             #[cfg(not(target_os = "macos"))]
             {
