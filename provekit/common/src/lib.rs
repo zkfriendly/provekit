@@ -1,5 +1,9 @@
 pub mod file;
 pub mod hash_config;
+#[cfg(target_os = "linux")]
+mod cuda_ntt;
+#[cfg(target_os = "linux")]
+mod cuda_sha2;
 mod interner;
 #[cfg(target_os = "macos")]
 mod metal_ntt;
@@ -49,6 +53,25 @@ pub fn register_ntt() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
         let ntt: Arc<dyn whir::algebra::ntt::ReedSolomon<FieldElement>> = {
+            #[cfg(target_os = "linux")]
+            {
+                match cuda_ntt::CudaBn254Ntt::new() {
+                    Ok(cuda) => {
+                        let accelerator: Arc<
+                            dyn whir::protocols::irs_commit::AcceleratedCommitter<FieldElement>,
+                        > = Arc::new(cuda);
+                        whir::protocols::irs_commit::ACCELERATORS.insert(accelerator);
+                        Arc::new(cuda)
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            "failed to initialize CUDA BN254 NTT backend: {err}; falling back to \
+                             CPU NTT"
+                        );
+                        Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default())
+                    }
+                }
+            }
             #[cfg(target_os = "macos")]
             {
                 match metal_ntt::MetalBn254Ntt::new() {
@@ -68,12 +91,23 @@ pub fn register_ntt() {
                     }
                 }
             }
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(not(any(target_os = "linux", target_os = "macos")))]
             {
                 Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default())
             }
         };
         whir::algebra::ntt::NTT.insert(ntt);
+
+        #[cfg(target_os = "linux")]
+        if env::var_os("PROVEKIT_ENABLE_CUDA_SHA2_ENGINE").is_some() {
+            match cuda_sha2::CudaSha2HashEngine::new() {
+                Ok(engine) => {
+                    let sha2: Arc<dyn whir::hash::HashEngine> = Arc::new(engine);
+                    whir::hash::ENGINES.register(sha2);
+                }
+                Err(err) => tracing::warn!("failed to initialize CUDA SHA2 backend: {err}"),
+            }
+        }
 
         #[cfg(target_os = "macos")]
         if env::var_os("PROVEKIT_ENABLE_METAL_SHA2_ENGINE").is_some() {
