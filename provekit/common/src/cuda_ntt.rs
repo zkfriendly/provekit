@@ -53,6 +53,18 @@ unsafe impl DeviceRepr for StageParams {}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
+struct TiledStageParams {
+    rows:         u64,
+    row_len:      u64,
+    tile_len:     u64,
+    stage_count:  u32,
+    _padding:     u32,
+}
+
+unsafe impl DeviceRepr for TiledStageParams {}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 struct PackParams {
     poly_size:          u64,
     row_len:            u64,
@@ -96,17 +108,17 @@ struct EncodedMatrix {
 
 struct CudaNttEngine {
     ctx:            Arc<CudaContext>,
-    stream:         Arc<CudaStream>,
     pack:           CudaFunction,
+    stage_tiled:    CudaFunction,
     stage:          CudaFunction,
     transpose:      CudaFunction,
     sha256_rows:    CudaFunction,
     roots_by_order: Mutex<HashMap<usize, Arc<RootTable>>>,
-    workspace:      Mutex<EncodeWorkspace>,
+    workspaces:     Mutex<Vec<EncodeWorkspace>>,
 }
 
-#[derive(Default)]
 struct EncodeWorkspace {
+    stream:      Arc<CudaStream>,
     current:     Option<CudaSlice<GpuField>>,
     scratch:     Option<CudaSlice<GpuField>>,
     hash_output: Option<CudaSlice<u8>>,
@@ -121,8 +133,15 @@ struct CudaMatrixRows {
 
 static ENGINE: OnceLock<Result<Arc<CudaNttEngine>, String>> = OnceLock::new();
 
+struct WorkspaceLease<'a> {
+    engine:    &'a CudaNttEngine,
+    workspace: Option<EncodeWorkspace>,
+}
+
 impl CudaBn254Ntt {
     const DEFAULT_MIN_CODEWORD_LENGTH: usize = 32;
+    const DEFAULT_ROOT_CACHE_CAPACITY: usize = 8;
+    const TILED_STAGE_TILE_LEN: usize = 512;
     const BLOCK_DIM: u32 = 256;
 
     pub fn new() -> Result<Self, String> {
@@ -161,6 +180,14 @@ impl CudaBn254Ntt {
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(Self::DEFAULT_MIN_CODEWORD_LENGTH)
+    }
+
+    fn root_cache_capacity() -> usize {
+        env::var("PROVEKIT_CUDA_NTT_ROOT_CACHE_CAPACITY")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(Self::DEFAULT_ROOT_CACHE_CAPACITY)
     }
 
     fn should_accelerate(
@@ -206,6 +233,14 @@ impl CudaBn254Ntt {
         }
     }
 
+    fn grid_tiled(rows: usize, tiles_per_row: usize, tile_len: usize) -> LaunchConfig {
+        LaunchConfig {
+            grid_dim: ((rows * tiles_per_row) as u32, 1, 1),
+            block_dim: ((tile_len / 2) as u32, 1, 1),
+            shared_mem_bytes: (tile_len * size_of::<GpuField>()) as u32,
+        }
+    }
+
     fn gpu_encode_artifact(
         &self,
         interleaved_coeffs: &[&[Fr]],
@@ -219,7 +254,12 @@ impl CudaBn254Ntt {
             return Ok(EncodedMatrix {
                 rows: 0,
                 cols: 0,
-                buffer: engine.stream.clone_htod(&Vec::<GpuField>::new()).map_err(driver_err)?,
+                buffer: engine
+                    .ctx
+                    .new_stream()
+                    .map_err(driver_err)?
+                    .clone_htod(&Vec::<GpuField>::new())
+                    .map_err(driver_err)?,
             });
         }
         if !Self::should_accelerate(codeword_length, interleaved_coeffs, None) {
@@ -253,29 +293,37 @@ impl CudaBn254Ntt {
         ));
 
         let pack_started = Instant::now();
-        let mut coeffs = Vec::with_capacity(interleaved_coeffs.len() * poly_size);
-        for (poly_index, poly) in interleaved_coeffs.iter().enumerate() {
-            debug_assert_eq!(poly_index * poly_size, coeffs.len());
-            coeffs.extend(poly.iter().copied().map(fr_to_gpu));
+        let mut workspace = engine.checkout_workspace()?;
+        let coeffs_stream = Arc::clone(&workspace.workspace.as_ref().unwrap().stream);
+        let mut coeffs = unsafe {
+            engine
+                .ctx
+                .alloc_pinned::<GpuField>(interleaved_coeffs.len() * poly_size)
+                .map_err(driver_err)?
+        };
+        {
+            let coeffs_slice = coeffs.as_mut_slice().map_err(driver_err)?;
+            for (poly_index, poly) in interleaved_coeffs.iter().enumerate() {
+                let dst = &mut coeffs_slice[poly_index * poly_size..(poly_index + 1) * poly_size];
+                for (dst_field, value) in dst.iter_mut().zip(poly.iter().copied()) {
+                    *dst_field = fr_to_gpu(value);
+                }
+            }
         }
-        let coeffs_dev = engine.stream.clone_htod(&coeffs).map_err(driver_err)?;
+        let coeffs_dev = coeffs_stream.clone_htod(&coeffs).map_err(driver_err)?;
         let pack_elapsed = pack_started.elapsed();
 
         let roots_started = Instant::now();
         let roots = engine.root_table(codeword_length)?;
         let roots_elapsed = roots_started.elapsed();
-        let mut workspace = engine.workspace.lock().unwrap();
-        workspace.ensure_current_buffer(&engine.stream, total_size)?;
-        workspace.ensure_scratch_buffer(&engine.stream, total_size)?;
-        let EncodeWorkspace {
-            current: current_slot,
-            scratch: scratch_slot,
-            ..
-        } = &mut *workspace;
-        let current = current_slot.as_mut().unwrap();
-        let scratch = scratch_slot.as_mut().unwrap();
-        engine.stream.memset_zeros(current).map_err(driver_err)?;
-        engine.stream.memset_zeros(scratch).map_err(driver_err)?;
+        workspace.ensure_current_buffer(total_size)?;
+        workspace.ensure_scratch_buffer(total_size)?;
+        let workspace_inner = workspace.workspace.as_mut().unwrap();
+        let stream = Arc::clone(&workspace_inner.stream);
+        let current = workspace_inner.current.as_mut().unwrap();
+        let scratch = workspace_inner.scratch.as_mut().unwrap();
+        stream.memset_zeros(current).map_err(driver_err)?;
+        stream.memset_zeros(scratch).map_err(driver_err)?;
 
         let pack_params = PackParams {
             poly_size: poly_size as u64,
@@ -289,7 +337,7 @@ impl CudaBn254Ntt {
 
         let gpu_started = Instant::now();
         {
-            let mut launch = engine.stream.launch_builder(&engine.pack);
+            let mut launch = stream.launch_builder(&engine.pack);
             launch.arg(&coeffs_dev);
             launch.arg(&mut *current);
             launch.arg(&pack_params);
@@ -298,7 +346,28 @@ impl CudaBn254Ntt {
 
         let mut current_is_workspace_current = true;
         let stages = codeword_length.trailing_zeros() as usize;
-        for stage in 0..stages {
+        let tiled_stage_count = stages.min(Self::TILED_STAGE_TILE_LEN.trailing_zeros() as usize);
+        if tiled_stage_count > 0 {
+            let tile_len = 1usize << tiled_stage_count;
+            let tiles_per_row = codeword_length / tile_len;
+            let params = TiledStageParams {
+                rows: rows as u64,
+                row_len: codeword_length as u64,
+                tile_len: tile_len as u64,
+                stage_count: tiled_stage_count as u32,
+                _padding: 0,
+            };
+            let mut launch = stream.launch_builder(&engine.stage_tiled);
+            let current_view = current.as_view();
+            launch.arg(&current_view);
+            launch.arg(&mut *scratch);
+            launch.arg(&roots.buffer);
+            launch.arg(&params);
+            unsafe { launch.launch(Self::grid_tiled(rows, tiles_per_row, tile_len)) }
+                .map_err(driver_err)?;
+            current_is_workspace_current = false;
+        }
+        for stage in tiled_stage_count..stages {
             let len = 1usize << (stage + 1);
             let half = len / 2;
             let params = StageParams {
@@ -308,7 +377,7 @@ impl CudaBn254Ntt {
                 step: (codeword_length / len) as u64,
             };
             if current_is_workspace_current {
-                let mut launch = engine.stream.launch_builder(&engine.stage);
+                let mut launch = stream.launch_builder(&engine.stage);
                 let current_view = current.as_view();
                 launch.arg(&current_view);
                 launch.arg(&mut *scratch);
@@ -316,7 +385,7 @@ impl CudaBn254Ntt {
                 launch.arg(&params);
                 unsafe { launch.launch(Self::grid_1d(total_butterflies)) }.map_err(driver_err)?;
             } else {
-                let mut launch = engine.stream.launch_builder(&engine.stage);
+                let mut launch = stream.launch_builder(&engine.stage);
                 let scratch_view = scratch.as_view();
                 launch.arg(&scratch_view);
                 launch.arg(&mut *current);
@@ -327,8 +396,7 @@ impl CudaBn254Ntt {
             current_is_workspace_current = !current_is_workspace_current;
         }
 
-        let mut output = engine
-            .stream
+        let mut output = stream
             .alloc_zeros::<GpuField>(total_size)
             .map_err(driver_err)?;
         let transpose_params = TransposeParams {
@@ -338,14 +406,14 @@ impl CudaBn254Ntt {
         };
         {
             if current_is_workspace_current {
-                let mut launch = engine.stream.launch_builder(&engine.transpose);
+                let mut launch = stream.launch_builder(&engine.transpose);
                 let current_view = current.as_view();
                 launch.arg(&current_view);
                 launch.arg(&mut output);
                 launch.arg(&transpose_params);
                 unsafe { launch.launch(Self::grid_1d(total_size)) }.map_err(driver_err)?;
             } else {
-                let mut launch = engine.stream.launch_builder(&engine.transpose);
+                let mut launch = stream.launch_builder(&engine.transpose);
                 let scratch_view = scratch.as_view();
                 launch.arg(&scratch_view);
                 launch.arg(&mut output);
@@ -384,8 +452,9 @@ impl CudaBn254Ntt {
         }
 
         let bytes_started = Instant::now();
-        let mut workspace = engine.workspace.lock().unwrap();
-        let hash_buffer = workspace.hash_output_buffer(&engine.stream, matrix.rows * size_of::<Hash>())?;
+        let mut workspace = engine.checkout_workspace()?;
+        let hash_stream = Arc::clone(&workspace.workspace.as_ref().unwrap().stream);
+        let hash_buffer = workspace.hash_output_buffer(matrix.rows * size_of::<Hash>())?;
         let mut hash_view = hash_buffer.slice_mut(..matrix.rows * size_of::<Hash>());
         let bytes_elapsed = bytes_started.elapsed();
         let hash_params = HashManyParams {
@@ -395,22 +464,19 @@ impl CudaBn254Ntt {
 
         let gpu_started = Instant::now();
         {
-            let mut launch = engine.stream.launch_builder(&engine.sha256_rows);
+            let mut launch = hash_stream.launch_builder(&engine.sha256_rows);
             launch.arg(&matrix.buffer);
             launch.arg(&mut hash_view);
             launch.arg(&hash_params);
             unsafe { launch.launch(Self::grid_1d(matrix.rows)) }.map_err(driver_err)?;
         }
-        engine.stream.synchronize().map_err(driver_err)?;
+        hash_stream.synchronize().map_err(driver_err)?;
         let gpu_elapsed = gpu_started.elapsed();
 
         let readback_started = Instant::now();
         let mut bytes = vec![0u8; matrix.rows * size_of::<Hash>()];
-        engine
-            .stream
-            .memcpy_dtoh(&hash_view, &mut bytes)
-            .map_err(driver_err)?;
-        engine.stream.synchronize().map_err(driver_err)?;
+        hash_stream.memcpy_dtoh(&hash_view, &mut bytes).map_err(driver_err)?;
+        hash_stream.synchronize().map_err(driver_err)?;
         let mut hashes = vec![Hash::default(); matrix.rows];
         for (dst, chunk) in hashes.iter_mut().zip(bytes.chunks_exact(size_of::<Hash>())) {
             dst.0.copy_from_slice(chunk);
@@ -438,7 +504,7 @@ impl CudaBn254Ntt {
         let matrix =
             self.gpu_encode_artifact(interleaved_coeffs, codeword_length, interleaving_depth)?;
         let readback_started = Instant::now();
-        let stream = &self.engine()?.stream;
+        let stream = matrix.buffer.stream();
         let mut result = vec![GpuField::default(); matrix.rows * matrix.cols];
         stream.memcpy_dtoh(&matrix.buffer, &mut result).map_err(driver_err)?;
         stream.synchronize().map_err(driver_err)?;
@@ -489,11 +555,12 @@ impl AcceleratedCommitter<Fr> for CudaBn254Ntt {
         let matrix =
             self.gpu_encode_artifact(interleaved_coeffs, codeword_length, interleaving_depth)?;
         let leaf_hashes = self.gpu_hash_rows(&matrix)?;
+        let buffer_stream = Arc::clone(matrix.buffer.stream());
         let rows = Arc::new(CudaMatrixRows {
             rows: matrix.rows,
             cols: matrix.cols,
             buffer: matrix.buffer,
-            stream: Arc::clone(&self.engine()?.stream),
+            stream: buffer_stream,
         });
         Ok(Some(AcceleratedCommit {
             matrix: rows,
@@ -523,25 +590,42 @@ impl MatrixRows<Fr> for CudaMatrixRows {
         for &row in indices {
             assert!(row < self.rows, "row index out of bounds");
         }
-        let mut fields = vec![GpuField::default(); indices.len() * self.cols];
-        for (chunk_index, &row) in indices.iter().enumerate() {
-            let start = row * self.cols;
-            let end = start + self.cols;
+        let mut unique_rows = indices.to_vec();
+        unique_rows.sort_unstable();
+        unique_rows.dedup();
+
+        let mut unique_data = HashMap::with_capacity(unique_rows.len());
+        let mut segment_start = 0usize;
+        while segment_start < unique_rows.len() {
+            let start_row = unique_rows[segment_start];
+            let mut segment_end = segment_start + 1;
+            while segment_end < unique_rows.len()
+                && unique_rows[segment_end] == unique_rows[segment_end - 1] + 1
+            {
+                segment_end += 1;
+            }
+            let row_count = segment_end - segment_start;
+            let start = start_row * self.cols;
+            let end = start + row_count * self.cols;
             let view = self.buffer.slice(start..end);
-            let host_start = chunk_index * self.cols;
-            let host_end = host_start + self.cols;
+            let mut segment = vec![GpuField::default(); row_count * self.cols];
             self.stream
-                .memcpy_dtoh(&view, &mut fields[host_start..host_end])
+                .memcpy_dtoh(&view, &mut segment)
                 .unwrap_or_else(|err| panic!("CUDA matrix row read failed: {err}"));
+            for offset in 0..row_count {
+                let row = start_row + offset;
+                let row_start = offset * self.cols;
+                let row_end = row_start + self.cols;
+                unique_data.insert(row, segment[row_start..row_end].to_vec());
+            }
+            segment_start = segment_end;
         }
         self.stream
             .synchronize()
             .unwrap_or_else(|err| panic!("CUDA matrix row read failed: {err}"));
         let mut out = Vec::with_capacity(indices.len() * self.cols);
-        for chunk_index in 0..indices.len() {
-            let start = chunk_index * self.cols;
-            let end = start + self.cols;
-            out.extend(fields[start..end].iter().copied().map(gpu_to_fr));
+        for &row in indices {
+            out.extend(unique_data[&row].iter().copied().map(gpu_to_fr));
         }
         out
     }
@@ -550,20 +634,31 @@ impl MatrixRows<Fr> for CudaMatrixRows {
 impl CudaNttEngine {
     fn new() -> Result<Self, String> {
         let ctx = CudaContext::new(0).map_err(driver_err)?;
-        let stream = ctx.new_stream().map_err(driver_err)?;
         let (major, minor) = ctx.compute_capability().map_err(driver_err)?;
         let ptx = compile_cached_ptx("ntt", CUDA_NTT_SOURCE, arch_for_compute_capability(major, minor))?;
         let module = ctx.load_module(ptx).map_err(driver_err)?;
 
         Ok(Self {
             ctx,
-            stream,
             pack: module.load_function("pack_coefficients").map_err(driver_err)?,
+            stage_tiled: module.load_function("stage_ntt_tiled").map_err(driver_err)?,
             stage: module.load_function("stage_ntt").map_err(driver_err)?,
             transpose: module.load_function("transpose_matrix").map_err(driver_err)?,
             sha256_rows: module.load_function("sha256_field_rows").map_err(driver_err)?,
             roots_by_order: Mutex::new(HashMap::new()),
-            workspace: Mutex::new(EncodeWorkspace::default()),
+            workspaces: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn checkout_workspace(&self) -> Result<WorkspaceLease<'_>, String> {
+        let workspace = self.workspaces.lock().unwrap().pop();
+        let workspace = match workspace {
+            Some(workspace) => workspace,
+            None => EncodeWorkspace::new(Arc::clone(&self.ctx))?,
+        };
+        Ok(WorkspaceLease {
+            engine: self,
+            workspace: Some(workspace),
         })
     }
 
@@ -584,8 +679,18 @@ impl CudaNttEngine {
         }
 
         let table = Arc::new(RootTable {
-            buffer: self.stream.clone_htod(&roots).map_err(driver_err)?,
+            buffer: self
+                .ctx
+                .new_stream()
+                .map_err(driver_err)?
+                .clone_htod(&roots)
+                .map_err(driver_err)?,
         });
+        if cache.len() >= CudaBn254Ntt::root_cache_capacity() {
+            if let Some(evict_key) = cache.keys().copied().min() {
+                cache.remove(&evict_key);
+            }
+        }
         cache.insert(codeword_length, Arc::clone(&table));
         trace_event(format_args!("roots cache miss codeword_length={codeword_length}"));
         Ok(table)
@@ -613,28 +718,50 @@ fn driver_err(err: DriverError) -> String {
 }
 
 impl EncodeWorkspace {
-    fn ensure_current_buffer(
-        &mut self,
-        stream: &Arc<CudaStream>,
-        len: usize,
-    ) -> Result<(), String> {
-        ensure_buffer(stream, &mut self.current, len).map(|_| ())
+    fn new(ctx: Arc<CudaContext>) -> Result<Self, String> {
+        Ok(Self {
+            stream: ctx.new_stream().map_err(driver_err)?,
+            current: None,
+            scratch: None,
+            hash_output: None,
+        })
     }
 
-    fn ensure_scratch_buffer(
-        &mut self,
-        stream: &Arc<CudaStream>,
-        len: usize,
-    ) -> Result<(), String> {
-        ensure_buffer(stream, &mut self.scratch, len).map(|_| ())
+    fn ensure_current_buffer(&mut self, len: usize) -> Result<(), String> {
+        ensure_buffer(&self.stream, &mut self.current, len).map(|_| ())
+    }
+
+    fn ensure_scratch_buffer(&mut self, len: usize) -> Result<(), String> {
+        ensure_buffer(&self.stream, &mut self.scratch, len).map(|_| ())
     }
 
     fn hash_output_buffer<'a>(
         &'a mut self,
-        stream: &Arc<CudaStream>,
         len: usize,
     ) -> Result<&'a mut CudaSlice<u8>, String> {
-        ensure_buffer(stream, &mut self.hash_output, len)
+        ensure_buffer(&self.stream, &mut self.hash_output, len)
+    }
+}
+
+impl Drop for WorkspaceLease<'_> {
+    fn drop(&mut self) {
+        if let Some(workspace) = self.workspace.take() {
+            self.engine.workspaces.lock().unwrap().push(workspace);
+        }
+    }
+}
+
+impl WorkspaceLease<'_> {
+    fn ensure_current_buffer(&mut self, len: usize) -> Result<(), String> {
+        self.workspace.as_mut().unwrap().ensure_current_buffer(len)
+    }
+
+    fn ensure_scratch_buffer(&mut self, len: usize) -> Result<(), String> {
+        self.workspace.as_mut().unwrap().ensure_scratch_buffer(len)
+    }
+
+    fn hash_output_buffer(&mut self, len: usize) -> Result<&mut CudaSlice<u8>, String> {
+        self.workspace.as_mut().unwrap().hash_output_buffer(len)
     }
 }
 
@@ -721,6 +848,14 @@ struct StageParams {
     ulong row_len;
     ulong half_len;
     ulong step;
+};
+
+struct TiledStageParams {
+    ulong rows;
+    ulong row_len;
+    ulong tile_len;
+    uint stage_count;
+    uint _padding;
 };
 
 struct PackParams {
@@ -991,6 +1126,51 @@ extern "C" __global__ void stage_ntt(
     output[i1] = sub_mod(even, twiddled);
 }
 
+extern "C" __global__ void stage_ntt_tiled(
+    const Fe* input,
+    Fe* output,
+    const Fe* roots,
+    TiledStageParams params
+) {
+    extern __shared__ Fe tile[];
+
+    ulong block = (ulong)blockIdx.x;
+    ulong tiles_per_row = params.row_len / params.tile_len;
+    ulong row = block / tiles_per_row;
+    ulong tile_index = block - row * tiles_per_row;
+    ulong tile_start = row * params.row_len + tile_index * params.tile_len;
+    uint tid = (uint)threadIdx.x;
+    ulong half_tile = params.tile_len >> 1;
+
+    if (row >= params.rows || tid >= half_tile) {
+        return;
+    }
+
+    tile[tid] = input[tile_start + tid];
+    tile[half_tile + tid] = input[tile_start + half_tile + tid];
+    __syncthreads();
+
+    for (uint stage = 0u; stage < params.stage_count; ++stage) {
+        ulong len = 1ull << (stage + 1u);
+        ulong half = len >> 1u;
+        ulong group = tid / half;
+        ulong k = tid - group * half;
+        ulong i0 = group * len + k;
+        ulong i1 = i0 + half;
+        ulong step = params.row_len / len;
+        Fe even = tile[i0];
+        Fe odd = tile[i1];
+        Fe twiddle = roots[k * step];
+        Fe twiddled = mont_mul(odd, twiddle);
+        tile[i0] = add_mod(even, twiddled);
+        tile[i1] = sub_mod(even, twiddled);
+        __syncthreads();
+    }
+
+    output[tile_start + tid] = tile[tid];
+    output[tile_start + half_tile + tid] = tile[half_tile + tid];
+}
+
 extern "C" __global__ void transpose_matrix(
     const Fe* input,
     Fe* output,
@@ -1007,17 +1187,30 @@ extern "C" __global__ void transpose_matrix(
     output[dst] = input[gid];
 }
 
-__device__ __forceinline__ unsigned char row_message_byte(
-    const Fe* row,
-    ulong row_fields,
-    ulong byte_idx
+__device__ __forceinline__ uint word_from_bytes(
+    unsigned char b0,
+    unsigned char b1,
+    unsigned char b2,
+    unsigned char b3
 ) {
-    ulong field_index = byte_idx >> 5;
-    uint byte_in_field = (uint)(byte_idx & 31ull);
-    Fe canonical = from_mont(row[field_index]);
-    uint limb = byte_in_field >> 3;
-    uint byte = byte_in_field & 7u;
-    return (unsigned char)((canonical.limbs[limb] >> (byte * 8u)) & 0xffull);
+    return ((uint)b0 << 24) | ((uint)b1 << 16) | ((uint)b2 << 8) | (uint)b3;
+}
+
+__device__ __forceinline__ void write_field_words(Fe field, uint* w, uint word_offset) {
+    #pragma unroll
+    for (uint limb = 0; limb < 4; ++limb) {
+        ulong value = field.limbs[limb];
+        unsigned char b0 = (unsigned char)(value & 0xffull);
+        unsigned char b1 = (unsigned char)((value >> 8) & 0xffull);
+        unsigned char b2 = (unsigned char)((value >> 16) & 0xffull);
+        unsigned char b3 = (unsigned char)((value >> 24) & 0xffull);
+        unsigned char b4 = (unsigned char)((value >> 32) & 0xffull);
+        unsigned char b5 = (unsigned char)((value >> 40) & 0xffull);
+        unsigned char b6 = (unsigned char)((value >> 48) & 0xffull);
+        unsigned char b7 = (unsigned char)((value >> 56) & 0xffull);
+        w[word_offset + limb * 2u + 0u] = word_from_bytes(b0, b1, b2, b3);
+        w[word_offset + limb * 2u + 1u] = word_from_bytes(b4, b5, b6, b7);
+    }
 }
 
 extern "C" __global__ void sha256_field_rows(
@@ -1033,8 +1226,9 @@ extern "C" __global__ void sha256_field_rows(
     const Fe* row = input + gid * params.row_fields;
     ulong row_size = params.row_fields * 32ull;
     ulong total_blocks = (row_size + 9ull + 63ull) / 64ull;
-    ulong total_padded_len = total_blocks * 64ull;
     ulong bit_len = row_size * 8ull;
+    ulong full_field_pairs = params.row_fields >> 1u;
+    bool odd_field_count = (params.row_fields & 1ull) != 0ull;
 
     uint h0 = 0x6a09e667u;
     uint h1 = 0xbb67ae85u;
@@ -1047,23 +1241,24 @@ extern "C" __global__ void sha256_field_rows(
 
     for (ulong block = 0; block < total_blocks; ++block) {
         uint w[64];
-
+        #pragma unroll
         for (uint i = 0; i < 16; ++i) {
-            uint word = 0u;
-            for (uint j = 0; j < 4; ++j) {
-                ulong idx = block * 64ull + (ulong)i * 4ull + (ulong)j;
-                unsigned char byte = 0u;
-                if (idx < row_size) {
-                    byte = row_message_byte(row, params.row_fields, idx);
-                } else if (idx == row_size) {
-                    byte = 0x80u;
-                } else if (idx >= total_padded_len - 8ull) {
-                    uint shift = (uint)((total_padded_len - 1ull - idx) * 8ull);
-                    byte = (unsigned char)((bit_len >> shift) & 0xffull);
-                }
-                word = (word << 8) | (uint)byte;
-            }
-            w[i] = word;
+            w[i] = 0u;
+        }
+
+        if (block < full_field_pairs) {
+            ulong field_index = block * 2ull;
+            write_field_words(from_mont(row[field_index]), w, 0u);
+            write_field_words(from_mont(row[field_index + 1ull]), w, 8u);
+        } else if (odd_field_count && block == full_field_pairs) {
+            write_field_words(from_mont(row[params.row_fields - 1ull]), w, 0u);
+            w[8] = 0x80000000u;
+            w[14] = (uint)(bit_len >> 32);
+            w[15] = (uint)(bit_len & 0xffffffffull);
+        } else {
+            w[0] = 0x80000000u;
+            w[14] = (uint)(bit_len >> 32);
+            w[15] = (uint)(bit_len & 0xffffffffull);
         }
 
         for (uint i = 16; i < 64; ++i) {

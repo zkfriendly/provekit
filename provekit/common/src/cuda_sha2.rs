@@ -32,18 +32,22 @@ unsafe impl DeviceRepr for HashManyParams {}
 
 struct CudaSha2Runtime {
     ctx:    Arc<CudaContext>,
-    stream: Arc<CudaStream>,
     kernel: CudaFunction,
-    buffers: Mutex<Sha2Buffers>,
+    buffers: Mutex<Vec<Sha2Buffers>>,
 }
 
 static RUNTIME: OnceLock<Result<Arc<CudaSha2Runtime>, String>> = OnceLock::new();
 static PREFERRED_BATCH_SIZE: OnceLock<usize> = OnceLock::new();
 
-#[derive(Default)]
 struct Sha2Buffers {
+    stream: Arc<CudaStream>,
     input:  Option<CudaSlice<u8>>,
     output: Option<CudaSlice<u8>>,
+}
+
+struct Sha2Lease<'a> {
+    runtime:  &'a CudaSha2Runtime,
+    buffers: Option<Sha2Buffers>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -110,35 +114,16 @@ impl CudaSha2HashEngine {
         }
 
         let encode_started = Instant::now();
-        let mut buffers = runtime.buffers.lock().unwrap();
-        let needs_input_alloc = buffers.input.as_ref().is_none_or(|buffer| buffer.len() < input.len());
-        if needs_input_alloc {
-            buffers.input = Some(runtime.stream.alloc_zeros::<u8>(input.len()).map_err(driver_err)?);
-        }
-        let needs_output_alloc = buffers
-            .output
-            .as_ref()
-            .is_none_or(|buffer| buffer.len() < count * size_of::<Hash>());
-        if needs_output_alloc {
-            buffers.output = Some(
-                runtime
-                    .stream
-                    .alloc_zeros::<u8>(count * size_of::<Hash>())
-                    .map_err(driver_err)?,
-            );
-        }
-        let Sha2Buffers {
-            input: input_slot,
-            output: output_slot,
-        } = &mut *buffers;
-        let input_dev = input_slot.as_mut().unwrap();
-        let output_dev = output_slot.as_mut().unwrap();
+        let mut buffers = runtime.checkout_buffers()?;
+        buffers.ensure_input_buffer(input.len())?;
+        buffers.ensure_output_buffer(count * size_of::<Hash>())?;
+        let buffers_inner = buffers.buffers.as_mut().unwrap();
+        let stream = Arc::clone(&buffers_inner.stream);
+        let input_dev = buffers_inner.input.as_mut().unwrap();
+        let output_dev = buffers_inner.output.as_mut().unwrap();
         let mut input_view = input_dev.slice_mut(..input.len());
         let mut output_view = output_dev.slice_mut(..count * size_of::<Hash>());
-        runtime
-            .stream
-            .memcpy_htod(input, &mut input_view)
-            .map_err(driver_err)?;
+        stream.memcpy_htod(input, &mut input_view).map_err(driver_err)?;
         let params = HashManyParams {
             size:  size as u64,
             count: count as u64,
@@ -152,21 +137,18 @@ impl CudaSha2HashEngine {
             shared_mem_bytes: 0,
         };
         let input_read_view = input_view.as_view();
-        let mut launch = runtime.stream.launch_builder(&runtime.kernel);
+        let mut launch = stream.launch_builder(&runtime.kernel);
         launch.arg(&input_read_view);
         launch.arg(&mut output_view);
         launch.arg(&params);
         unsafe { launch.launch(cfg) }.map_err(driver_err)?;
-        runtime.stream.synchronize().map_err(driver_err)?;
+        stream.synchronize().map_err(driver_err)?;
         let gpu_elapsed = gpu_started.elapsed();
 
         let readback_started = Instant::now();
         let mut bytes = vec![0u8; count * size_of::<Hash>()];
-        runtime
-            .stream
-            .memcpy_dtoh(&output_view, &mut bytes)
-            .map_err(driver_err)?;
-        runtime.stream.synchronize().map_err(driver_err)?;
+        stream.memcpy_dtoh(&output_view, &mut bytes).map_err(driver_err)?;
+        stream.synchronize().map_err(driver_err)?;
         for (dst, chunk) in output.iter_mut().zip(bytes.chunks_exact(size_of::<Hash>())) {
             dst.0.copy_from_slice(chunk);
         }
@@ -217,7 +199,6 @@ impl HashEngine for CudaSha2HashEngine {
 impl CudaSha2Runtime {
     fn new() -> Result<Self, String> {
         let ctx = CudaContext::new(0).map_err(driver_err)?;
-        let stream = ctx.new_stream().map_err(driver_err)?;
         let (major, minor) = ctx.compute_capability().map_err(driver_err)?;
         let ptx = compile_cached_ptx(
             "sha2",
@@ -229,9 +210,20 @@ impl CudaSha2Runtime {
 
         Ok(Self {
             ctx,
-            stream,
             kernel,
-            buffers: Mutex::new(Sha2Buffers::default()),
+            buffers: Mutex::new(Vec::new()),
+        })
+    }
+
+    fn checkout_buffers(&self) -> Result<Sha2Lease<'_>, String> {
+        let buffers = self.buffers.lock().unwrap().pop();
+        let buffers = match buffers {
+            Some(buffers) => buffers,
+            None => Sha2Buffers::new(Arc::clone(&self.ctx))?,
+        };
+        Ok(Sha2Lease {
+            runtime: self,
+            buffers: Some(buffers),
         })
     }
 }
@@ -254,6 +246,52 @@ fn arch_for_compute_capability(major: i32, minor: i32) -> Option<&'static str> {
 
 fn driver_err(err: DriverError) -> String {
     err.to_string()
+}
+
+impl Sha2Buffers {
+    fn new(ctx: Arc<CudaContext>) -> Result<Self, String> {
+        Ok(Self {
+            stream: ctx.new_stream().map_err(driver_err)?,
+            input: None,
+            output: None,
+        })
+    }
+
+    fn ensure_input_buffer(&mut self, len: usize) -> Result<(), String> {
+        let needs_alloc = self.input.as_ref().is_none_or(|buffer| buffer.len() < len);
+        if needs_alloc {
+            self.input = Some(self.stream.alloc_zeros::<u8>(len).map_err(driver_err)?);
+        }
+        Ok(())
+    }
+
+    fn ensure_output_buffer(&mut self, len: usize) -> Result<(), String> {
+        let needs_alloc = self.output.as_ref().is_none_or(|buffer| buffer.len() < len);
+        if needs_alloc {
+            self.output = Some(self.stream.alloc_zeros::<u8>(len).map_err(driver_err)?);
+        }
+        Ok(())
+    }
+
+}
+
+impl Drop for Sha2Lease<'_> {
+    fn drop(&mut self) {
+        if let Some(buffers) = self.buffers.take() {
+            self.runtime.buffers.lock().unwrap().push(buffers);
+        }
+    }
+}
+
+impl Sha2Lease<'_> {
+    fn ensure_input_buffer(&mut self, len: usize) -> Result<(), String> {
+        self.buffers.as_mut().unwrap().ensure_input_buffer(len)
+    }
+
+    fn ensure_output_buffer(&mut self, len: usize) -> Result<(), String> {
+        self.buffers.as_mut().unwrap().ensure_output_buffer(len)
+    }
+
 }
 
 fn compile_cached_ptx(

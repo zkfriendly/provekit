@@ -7389,6 +7389,7 @@ name = "whir"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "ark-bn254",
  "ark-ff 0.5.0",
  "ark-serialize 0.5.0",
  "ark-std 0.5.0",
@@ -7397,6 +7398,7 @@ dependencies = [
  "ciborium",
  "clap",
  "const-oid 0.9.6",
+ "cudarc",
  "derive-where",
  "digest 0.10.7",
  "hex",
