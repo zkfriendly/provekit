@@ -1,0 +1,11 @@
+[package]
+name = "discord"
+type = "bin"
+authors = []
+compiler_version = ">=1.0.0"
+
+[dependencies]
+# Use path deps to pin branches (Nargo doesn't support git branch). Run ./setup_deps.sh once.
+zkemail = { path = "../zkemail.nr/lib" }
+zkregex = { path = "../zk-regex/noir" }
+poseidon = { tag = "v0.2.6", git = "https://github.com/noir-lang/poseidon" }
