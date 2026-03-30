@@ -7134,7 +7134,6 @@ dependencies = [
 [[package]]
 name = "whir"
 version = "0.1.0"
-source = "git+https://github.com/WizardOfMenlo/whir/?rev=20aecf708c34b91f652c851f0722177bf08315af#20aecf708c34b91f652c851f0722177bf08315af"
 dependencies = [
  "approx",
  "ark-ff 0.5.0",

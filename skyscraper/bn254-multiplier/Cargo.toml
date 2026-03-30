@@ -43,3 +43,7 @@ workspace = true
 [[bench]]
 name = "bench"
 harness = false
+
+[[bench]]
+name = "mul_compare"
+harness = false
