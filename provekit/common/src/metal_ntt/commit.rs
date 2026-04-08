@@ -2,10 +2,7 @@ use {
     super::{
         engine::PooledBuffer,
         field::gpu_to_fr,
-        types::{
-            DeviceMatrix, DeviceMerkleWitness, DeviceRows, EncodeFieldBytesParams, GpuField,
-            HashManyParams,
-        },
+        types::{DeviceMatrix, DeviceMerkleWitness, DeviceRows, GpuField, HashManyParams},
         MetalBn254Ntt,
     },
     ark_bn254::Fr,
@@ -63,55 +60,29 @@ impl MetalBn254Ntt {
         }
 
         let runtime = self.runtime()?;
-        let total_elements = matrix.rows * matrix.cols;
-        let total_bytes = total_elements * Fr::encoded_size();
         let message_size = matrix.cols * Fr::encoded_size();
-        if total_elements > u32::MAX as usize || message_size > u32::MAX as usize {
+        if matrix.rows > u32::MAX as usize || message_size > u32::MAX as usize {
             return Err("GPU hash launch exceeds current 32-bit grid limit".into());
         }
 
-        let encoded = runtime.pooled_bytes(total_bytes);
         let hashes = runtime.pooled_buffer::<Hash>(matrix.rows);
-        let encode_params = EncodeFieldBytesParams {
-            total_elements: total_elements as u32,
-        };
         let hash_params = HashManyParams {
             size:  message_size as u32,
             count: matrix.rows as u32,
         };
         let command_buffer = runtime.queue.new_command_buffer();
 
-        let encode_encoder = command_buffer.new_compute_command_encoder();
-        encode_encoder.set_compute_pipeline_state(&runtime.encode_bytes_pipeline);
-        encode_encoder.set_buffer(0, Some(matrix.buffer.as_ref()), 0);
-        encode_encoder.set_buffer(1, Some(encoded.as_ref()), 0);
-        encode_encoder.set_bytes(
-            2,
-            size_of::<EncodeFieldBytesParams>() as NSUInteger,
-            (&encode_params as *const EncodeFieldBytesParams).cast::<c_void>(),
-        );
-        let encode_threads =
-            runtime.threads_per_threadgroup(&runtime.encode_bytes_pipeline, total_elements);
-        encode_encoder.dispatch_threads(
-            MTLSize {
-                width:  total_elements as u64,
-                height: 1,
-                depth:  1,
-            },
-            encode_threads,
-        );
-        encode_encoder.end_encoding();
-
         let hash_encoder = command_buffer.new_compute_command_encoder();
-        hash_encoder.set_compute_pipeline_state(&runtime.sha256_pipeline);
-        hash_encoder.set_buffer(0, Some(encoded.as_ref()), 0);
+        hash_encoder.set_compute_pipeline_state(&runtime.hash_field_rows_pipeline);
+        hash_encoder.set_buffer(0, Some(matrix.buffer.as_ref()), 0);
         hash_encoder.set_buffer(1, Some(hashes.as_ref()), 0);
         hash_encoder.set_bytes(
             2,
             size_of::<HashManyParams>() as NSUInteger,
             (&hash_params as *const HashManyParams).cast::<c_void>(),
         );
-        let hash_threads = runtime.threads_per_threadgroup(&runtime.sha256_pipeline, matrix.rows);
+        let hash_threads =
+            runtime.threads_per_threadgroup(&runtime.hash_field_rows_pipeline, matrix.rows);
         hash_encoder.dispatch_threads(
             MTLSize {
                 width:  matrix.rows as u64,

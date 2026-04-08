@@ -112,6 +112,7 @@ inline Fe mont_mul(Fe lhs, Fe rhs) {
     ulong buf[9] = {0};
     uint off = 0;
 
+#pragma clang loop unroll(enable)
     for (uint i = 0; i < 4; i++) {
         add_scaled(
             &buf[off],

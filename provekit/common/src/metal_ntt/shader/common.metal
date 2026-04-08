@@ -28,10 +28,6 @@ struct TransposeParams {
     uint total_elements;
 };
 
-struct FieldBytesParams {
-    uint total_elements;
-};
-
 struct HashManyParams {
     uint size;
     uint count;

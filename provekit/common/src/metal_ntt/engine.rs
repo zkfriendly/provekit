@@ -84,7 +84,7 @@ pub(super) struct MetalRuntime {
     #[allow(dead_code)]
     pub(super) field_mul_pipeline:    ComputePipelineState,
     pub(super) transpose_pipeline:    ComputePipelineState,
-    pub(super) encode_bytes_pipeline: ComputePipelineState,
+    pub(super) hash_field_rows_pipeline: ComputePipelineState,
     pub(super) sha256_pipeline:       ComputePipelineState,
     roots_cache:                      Mutex<HashMap<usize, Arc<Buffer>>>,
     buffer_pool:                      Mutex<HashMap<usize, Vec<Buffer>>>,
@@ -121,10 +121,10 @@ impl MetalRuntime {
                     &library,
                     "transpose_matrix",
                 )?,
-                encode_bytes_pipeline: Self::new_pipeline(
+                hash_field_rows_pipeline: Self::new_pipeline(
                     &device,
                     &library,
-                    "encode_field_rows_le",
+                    "sha256_field_rows",
                 )?,
                 sha256_pipeline: Self::new_pipeline(&device, &library, "sha256_many")?,
                 roots_cache: Mutex::new(HashMap::new()),

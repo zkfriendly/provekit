@@ -37,12 +37,6 @@ pub(super) struct TransposeParams {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
-pub(super) struct EncodeFieldBytesParams {
-    pub(super) total_elements: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
 pub(super) struct HashManyParams {
     pub(super) size:  u32,
     pub(super) count: u32,
