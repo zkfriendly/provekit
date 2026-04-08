@@ -1,0 +1,74 @@
+use {
+    metal::Buffer,
+    whir::hash::Hash,
+};
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct GpuField {
+    pub(super) limbs: [u64; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct NttStageParams {
+    pub(super) row_len:        u32,
+    pub(super) stride:         u32,
+    pub(super) twiddle_offset: u32,
+    pub(super) _pad0:          u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct TransposeParams {
+    pub(super) rows:           u32,
+    pub(super) cols:           u32,
+    pub(super) total_elements: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct EncodeFieldBytesParams {
+    pub(super) total_elements: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct HashManyParams {
+    pub(super) size:  u32,
+    pub(super) count: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+#[allow(dead_code)]
+pub(super) struct FieldMulParams {
+    pub(super) count: u32,
+}
+
+pub(super) struct DeviceMatrix {
+    pub(super) rows:   usize,
+    pub(super) cols:   usize,
+    pub(super) buffer: Buffer,
+}
+
+#[derive(Clone)]
+pub(super) struct DeviceRows {
+    pub(super) rows:   usize,
+    pub(super) cols:   usize,
+    pub(super) buffer: Buffer,
+}
+
+pub(super) struct DeviceMerkleWitness {
+    pub(super) num_nodes: usize,
+    pub(super) root:      Hash,
+    pub(super) buffer:    Buffer,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(super) struct EncodeShape {
+    pub(super) row_count:       usize,
+    pub(super) codeword_length: usize,
+    pub(super) message_length:  usize,
+    pub(super) total_elements:  usize,
+}
