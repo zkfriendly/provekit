@@ -3,8 +3,7 @@ pub mod hash_config;
 mod interner;
 #[cfg(target_os = "macos")]
 mod metal_ntt;
-#[cfg(target_os = "macos")]
-mod metal_sha2;
+
 mod noir_proof_scheme;
 pub mod optimize;
 pub mod prefix_covector;
@@ -74,17 +73,6 @@ pub fn register_ntt() {
             }
         };
         whir::algebra::ntt::NTT.insert(ntt);
-
-        #[cfg(target_os = "macos")]
-        if env::var_os("PROVEKIT_ENABLE_METAL_SHA2_ENGINE").is_some() {
-            match metal_sha2::MetalSha2HashEngine::new() {
-                Ok(engine) => {
-                    let sha2: Arc<dyn whir::hash::HashEngine> = Arc::new(engine);
-                    whir::hash::ENGINES.register(sha2);
-                }
-                Err(err) => tracing::warn!("failed to initialize Metal SHA2 backend: {err}"),
-            }
-        }
 
         whir::hash::ENGINES.register(Arc::new(skyscraper::SkyscraperHashEngine));
     });
