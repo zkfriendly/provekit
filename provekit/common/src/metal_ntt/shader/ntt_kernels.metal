@@ -1,28 +1,4 @@
 [[kernel]]
-void bit_reverse_permute_in_place(
-    device Fe *values [[buffer(0)]],
-    constant BitReverseConfig &config [[buffer(1)]],
-    uint gid [[thread_position_in_grid]]
-) {
-    if (gid >= config.total_elements) {
-        return;
-    }
-
-    uint row_len = config.row_len;
-    uint row = gid / row_len;
-    uint index = gid - row * row_len;
-    uint reversed = reverse_low_bits(index, config.log_n);
-    if (reversed <= index) {
-        return;
-    }
-
-    uint row_base = row * row_len;
-    Fe tmp = values[row_base + index];
-    values[row_base + index] = values[row_base + reversed];
-    values[row_base + reversed] = tmp;
-}
-
-[[kernel]]
 void radix2_ntt_stage(
     device Fe *values [[buffer(0)]],
     device const Fe *twiddles [[buffer(1)]],
@@ -47,3 +23,28 @@ void radix2_ntt_stage(
     values[base] = add_mod(even, t);
     values[mate] = sub_mod(even, t);
 }
+
+[[kernel]]
+void bit_reverse_permute_in_place(
+    device Fe *values [[buffer(0)]],
+    constant BitReverseConfig &config [[buffer(1)]],
+    uint gid [[thread_position_in_grid]]
+) {
+    if (gid >= config.total_elements) {
+        return;
+    }
+
+    uint row_len = config.row_len;
+    uint row = gid / row_len;
+    uint index = gid - row * row_len;
+    uint reversed = reverse_low_bits(index, config.log_n);
+    if (reversed <= index) {
+        return;
+    }
+
+    uint row_base = row * row_len;
+    Fe tmp = values[row_base + index];
+    values[row_base + index] = values[row_base + reversed];
+    values[row_base + reversed] = tmp;
+}
+
