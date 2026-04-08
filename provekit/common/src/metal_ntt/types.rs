@@ -1,5 +1,5 @@
 use {
-    metal::Buffer,
+    super::engine::PooledBuffer,
     whir::hash::Hash,
 };
 
@@ -49,20 +49,20 @@ pub(super) struct FieldMulParams {
 pub(super) struct DeviceMatrix {
     pub(super) rows:   usize,
     pub(super) cols:   usize,
-    pub(super) buffer: Buffer,
+    pub(super) buffer: PooledBuffer,
 }
 
 #[derive(Clone)]
 pub(super) struct DeviceRows {
     pub(super) rows:   usize,
     pub(super) cols:   usize,
-    pub(super) buffer: Buffer,
+    pub(super) buffer: PooledBuffer,
 }
 
 pub(super) struct DeviceMerkleWitness {
     pub(super) num_nodes: usize,
     pub(super) root:      Hash,
-    pub(super) buffer:    Buffer,
+    pub(super) buffer:    PooledBuffer,
 }
 
 #[derive(Clone, Copy, Debug)]

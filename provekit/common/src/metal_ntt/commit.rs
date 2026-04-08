@@ -1,5 +1,6 @@
 use {
     super::{
+        engine::PooledBuffer,
         field::gpu_to_fr,
         types::{
             DeviceMatrix, DeviceMerkleWitness, DeviceRows, EncodeFieldBytesParams, GpuField,
@@ -8,7 +9,7 @@ use {
         MetalBn254Ntt,
     },
     ark_bn254::Fr,
-    metal::{Buffer, MTLSize, NSRange, NSUInteger},
+    metal::{MTLSize, NSRange, NSUInteger},
     std::{ffi::c_void, mem::size_of, sync::Arc},
     whir::{
         hash::Hash,
@@ -56,9 +57,9 @@ impl MetalBn254Ntt {
     pub(super) fn hash_rows_to_buffer(
         &self,
         matrix: &DeviceMatrix,
-    ) -> Result<Buffer, String> {
+    ) -> Result<PooledBuffer, String> {
         if matrix.rows == 0 {
-            return Ok(self.runtime()?.empty_buffer::<Hash>(0));
+            return Ok(self.runtime()?.pooled_buffer::<Hash>(0));
         }
 
         let runtime = self.runtime()?;
@@ -69,8 +70,8 @@ impl MetalBn254Ntt {
             return Err("GPU hash launch exceeds current 32-bit grid limit".into());
         }
 
-        let encoded = runtime.empty_buffer::<u8>(total_bytes);
-        let hashes = runtime.empty_buffer::<Hash>(matrix.rows);
+        let encoded = runtime.pooled_bytes(total_bytes);
+        let hashes = runtime.pooled_buffer::<Hash>(matrix.rows);
         let encode_params = EncodeFieldBytesParams {
             total_elements: total_elements as u32,
         };
@@ -82,8 +83,8 @@ impl MetalBn254Ntt {
 
         let encode_encoder = command_buffer.new_compute_command_encoder();
         encode_encoder.set_compute_pipeline_state(&runtime.encode_bytes_pipeline);
-        encode_encoder.set_buffer(0, Some(&matrix.buffer), 0);
-        encode_encoder.set_buffer(1, Some(&encoded), 0);
+        encode_encoder.set_buffer(0, Some(matrix.buffer.as_ref()), 0);
+        encode_encoder.set_buffer(1, Some(encoded.as_ref()), 0);
         encode_encoder.set_bytes(
             2,
             size_of::<EncodeFieldBytesParams>() as NSUInteger,
@@ -103,8 +104,8 @@ impl MetalBn254Ntt {
 
         let hash_encoder = command_buffer.new_compute_command_encoder();
         hash_encoder.set_compute_pipeline_state(&runtime.sha256_pipeline);
-        hash_encoder.set_buffer(0, Some(&encoded), 0);
-        hash_encoder.set_buffer(1, Some(&hashes), 0);
+        hash_encoder.set_buffer(0, Some(encoded.as_ref()), 0);
+        hash_encoder.set_buffer(1, Some(hashes.as_ref()), 0);
         hash_encoder.set_bytes(
             2,
             size_of::<HashManyParams>() as NSUInteger,
@@ -130,7 +131,7 @@ impl MetalBn254Ntt {
     pub(super) fn build_merkle_witness(
         &self,
         matrix_commit: &MatrixCommitConfig<Fr>,
-        leaf_hashes: &Buffer,
+        leaf_hashes: &PooledBuffer,
     ) -> Result<Arc<dyn AcceleratedWitness>, String> {
         let runtime = self.runtime()?;
         let num_leaves = matrix_commit.num_rows();
@@ -149,19 +150,19 @@ impl MetalBn254Ntt {
             return Err("GPU Merkle launch exceeds current 32-bit grid limit".into());
         }
 
-        let tree = runtime.empty_buffer::<Hash>(num_nodes);
+        let tree = runtime.pooled_buffer::<Hash>(num_nodes);
         let command_buffer = runtime.queue.new_command_buffer();
         let blit = command_buffer.new_blit_command_encoder();
         blit.fill_buffer(
-            &tree,
+            tree.as_ref(),
             NSRange::new(0, (num_nodes * size_of::<Hash>()) as u64),
             0,
         );
         if num_leaves != 0 {
             blit.copy_from_buffer(
-                leaf_hashes,
+                leaf_hashes.as_ref(),
                 0,
-                &tree,
+                tree.as_ref(),
                 0,
                 (num_leaves * size_of::<Hash>()) as u64,
             );
@@ -186,8 +187,8 @@ impl MetalBn254Ntt {
             let current_offset = previous_offset + previous_len;
             let encoder = command_buffer.new_compute_command_encoder();
             encoder.set_compute_pipeline_state(&runtime.sha256_pipeline);
-            encoder.set_buffer(0, Some(&tree), (previous_offset * size_of::<Hash>()) as u64);
-            encoder.set_buffer(1, Some(&tree), (current_offset * size_of::<Hash>()) as u64);
+            encoder.set_buffer(0, Some(tree.as_ref()), (previous_offset * size_of::<Hash>()) as u64);
+            encoder.set_buffer(1, Some(tree.as_ref()), (current_offset * size_of::<Hash>()) as u64);
             encoder.set_bytes(
                 2,
                 size_of::<HashManyParams>() as NSUInteger,
@@ -210,7 +211,7 @@ impl MetalBn254Ntt {
         command_buffer.commit();
         command_buffer.wait_until_completed();
 
-        let root = runtime.buffer_slice::<Hash>(&tree, num_nodes)[num_nodes - 1];
+        let root = runtime.buffer_slice::<Hash>(tree.as_ref(), num_nodes)[num_nodes - 1];
 
         Ok(Arc::new(DeviceMerkleWitness {
             num_nodes,
@@ -231,7 +232,7 @@ impl AcceleratedWitness for DeviceMerkleWitness {
 
     fn read_nodes(&self, indices: &[usize]) -> Vec<Hash> {
         let nodes = unsafe {
-            std::slice::from_raw_parts(self.buffer.contents().cast::<Hash>(), self.num_nodes)
+            std::slice::from_raw_parts(self.buffer.as_ref().contents().cast::<Hash>(), self.num_nodes)
         };
         let mut out = Vec::with_capacity(indices.len());
         for &index in indices {
@@ -260,7 +261,7 @@ impl MatrixRows<Fr> for DeviceRows {
     fn read_rows(&self, indices: &[usize]) -> Vec<Fr> {
         let mut out = Vec::with_capacity(indices.len() * self.cols);
         let fields = unsafe {
-            std::slice::from_raw_parts(self.buffer.contents().cast::<GpuField>(), self.len())
+            std::slice::from_raw_parts(self.buffer.as_ref().contents().cast::<GpuField>(), self.len())
         };
         for &row in indices {
             assert!(row < self.rows, "row index out of bounds");

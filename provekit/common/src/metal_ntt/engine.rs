@@ -21,6 +21,50 @@ use {
 
 const SHADER_SOURCE: &str = include_str!("shader.metal");
 
+struct PooledBufferInner {
+    runtime:     Arc<MetalRuntime>,
+    bucket_bytes: usize,
+    buffer:      Buffer,
+}
+
+#[derive(Clone)]
+pub(super) struct PooledBuffer(Arc<PooledBufferInner>);
+
+impl PooledBuffer {
+    pub(super) fn as_ref(&self) -> &Buffer {
+        &self.0.buffer
+    }
+}
+
+impl std::fmt::Debug for PooledBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PooledBuffer")
+            .field("length", &self.0.buffer.length())
+            .finish()
+    }
+}
+
+impl std::ops::Deref for PooledBuffer {
+    type Target = Buffer;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0.buffer
+    }
+}
+
+impl AsRef<Buffer> for PooledBuffer {
+    fn as_ref(&self) -> &Buffer {
+        &self.0.buffer
+    }
+}
+
+impl Drop for PooledBufferInner {
+    fn drop(&mut self) {
+        self.runtime
+            .recycle_buffer(self.bucket_bytes, self.buffer.to_owned());
+    }
+}
+
 pub(super) struct MetalRuntime {
     pub(super) device:                Device,
     pub(super) queue:                 CommandQueue,
@@ -31,6 +75,7 @@ pub(super) struct MetalRuntime {
     pub(super) encode_bytes_pipeline: ComputePipelineState,
     pub(super) sha256_pipeline:       ComputePipelineState,
     roots_cache:                      Mutex<HashMap<usize, Arc<Buffer>>>,
+    buffer_pool:                      Mutex<HashMap<usize, Vec<Buffer>>>,
 }
 
 impl MetalRuntime {
@@ -66,6 +111,7 @@ impl MetalRuntime {
                 )?,
                 sha256_pipeline: Self::new_pipeline(&device, &library, "sha256_many")?,
                 roots_cache: Mutex::new(HashMap::new()),
+                buffer_pool: Mutex::new(HashMap::new()),
             })
         })
     }
@@ -78,11 +124,18 @@ impl MetalRuntime {
         )
     }
 
-    pub(super) fn empty_buffer<T>(&self, len: usize) -> Buffer {
-        self.device.new_buffer(
-            (len * size_of::<T>()) as u64,
-            MTLResourceOptions::StorageModeShared,
-        )
+    pub(super) fn pooled_buffer<T>(self: &Arc<Self>, len: usize) -> PooledBuffer {
+        self.pooled_bytes(len * size_of::<T>())
+    }
+
+    pub(super) fn pooled_bytes(self: &Arc<Self>, len: usize) -> PooledBuffer {
+        let bucket_bytes = bucket_bytes(len);
+        let buffer = self.take_buffer(bucket_bytes);
+        PooledBuffer(Arc::new(PooledBufferInner {
+            runtime: Arc::clone(self),
+            bucket_bytes,
+            buffer,
+        }))
     }
 
     pub(super) fn buffer_slice<'a, T>(&self, buffer: &'a Buffer, len: usize) -> &'a [T] {
@@ -157,6 +210,30 @@ impl MetalRuntime {
         Ok(buffer)
     }
 
+    fn take_buffer(&self, bucket_bytes: usize) -> Buffer {
+        if bucket_bytes == 0 {
+            return self.device.new_buffer(0, MTLResourceOptions::StorageModeShared);
+        }
+
+        let mut pool = self.buffer_pool.lock().unwrap();
+        if let Some(buffer) = pool.get_mut(&bucket_bytes).and_then(Vec::pop) {
+            return buffer;
+        }
+        drop(pool);
+
+        self.device
+            .new_buffer(bucket_bytes as u64, MTLResourceOptions::StorageModeShared)
+    }
+
+    fn recycle_buffer(&self, bucket_bytes: usize, buffer: Buffer) {
+        if bucket_bytes == 0 {
+            return;
+        }
+
+        let mut pool = self.buffer_pool.lock().unwrap();
+        pool.entry(bucket_bytes).or_default().push(buffer);
+    }
+
     fn new_pipeline(
         device: &Device,
         library: &Library,
@@ -166,5 +243,13 @@ impl MetalRuntime {
             .get_function(function_name, None)
             .map_err(|err| err.to_string())
             .and_then(|function| device.new_compute_pipeline_state_with_function(&function))
+    }
+}
+
+fn bucket_bytes(bytes: usize) -> usize {
+    if bytes == 0 {
+        0
+    } else {
+        bytes.next_power_of_two()
     }
 }
