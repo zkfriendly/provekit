@@ -1,8 +1,11 @@
 use {
     super::{
-        field::{fr_to_gpu, gpu_to_fr},
+        field::fr_to_gpu,
         logging::trace_event,
-        types::{DeviceMatrix, EncodeShape, GpuField, NttStageParams, TransposeParams},
+        types::{
+            BitReverseParams, DeviceMatrix, EncodeShape, GpuField, NttStageParams,
+            TransposeParams,
+        },
         MetalBn254Ntt,
     },
     ark_bn254::Fr,
@@ -10,6 +13,9 @@ use {
     rayon::prelude::*,
     std::{ffi::c_void, mem::size_of},
 };
+
+#[cfg(all(test, target_os = "macos"))]
+use super::field::gpu_to_fr;
 
 impl MetalBn254Ntt {
 
@@ -49,10 +55,17 @@ impl MetalBn254Ntt {
         );
         let roots = runtime.roots_buffer(codeword_length)?;
 
-        let scratch = runtime.pooled_buffer::<GpuField>(shape.total_elements);
         let transposed = runtime.pooled_buffer::<GpuField>(shape.total_elements);
         let stage_count = codeword_length.trailing_zeros() as usize;
         let total_butterflies = shape.total_elements / 2;
+        let bit_reverse_params = BitReverseParams {
+            row_len:        shape.codeword_length as u32,
+            log_n:          codeword_length.trailing_zeros(),
+            total_elements: shape.total_elements as u32,
+            _pad0:          0,
+        };
+        let bit_reverse_threads =
+            runtime.threads_per_threadgroup(&runtime.bit_reverse_pipeline, shape.total_elements);
         let stage_threads =
             runtime.threads_per_threadgroup(&runtime.ntt_stage_pipeline, total_butterflies);
         let transpose_threads =
@@ -64,29 +77,39 @@ impl MetalBn254Ntt {
         };
 
         let command_buffer = runtime.queue.new_command_buffer();
+        let bit_reverse_encoder = command_buffer.new_compute_command_encoder();
+        bit_reverse_encoder.set_compute_pipeline_state(&runtime.bit_reverse_pipeline);
+        bit_reverse_encoder.set_buffer(0, Some(current.as_ref()), 0);
+        bit_reverse_encoder.set_bytes(
+            1,
+            size_of::<BitReverseParams>() as NSUInteger,
+            (&bit_reverse_params as *const BitReverseParams).cast::<c_void>(),
+        );
+        bit_reverse_encoder.dispatch_threads(
+            MTLSize {
+                width:  shape.total_elements as u64,
+                height: 1,
+                depth:  1,
+            },
+            bit_reverse_threads,
+        );
+        bit_reverse_encoder.end_encoding();
+
         let stage_encoder = command_buffer.new_compute_command_encoder();
         stage_encoder.set_compute_pipeline_state(&runtime.ntt_stage_pipeline);
+        stage_encoder.set_buffer(0, Some(current.as_ref()), 0);
+        stage_encoder.set_buffer(1, Some(roots.as_ref()), 0);
 
         let mut twiddle_offset = 0usize;
-        let mut source_is_current = true;
         for stage in 0..stage_count {
-            let stride = codeword_length >> (stage + 1);
             let params = NttStageParams {
                 row_len:        shape.codeword_length as u32,
-                stride:         stride as u32,
+                half_m:         (1usize << stage) as u32,
                 twiddle_offset: twiddle_offset as u32,
                 _pad0:          0,
             };
-            if source_is_current {
-                stage_encoder.set_buffer(0, Some(current.as_ref()), 0);
-                stage_encoder.set_buffer(1, Some(scratch.as_ref()), 0);
-            } else {
-                stage_encoder.set_buffer(0, Some(scratch.as_ref()), 0);
-                stage_encoder.set_buffer(1, Some(current.as_ref()), 0);
-            }
-            stage_encoder.set_buffer(2, Some(roots.as_ref()), 0);
             stage_encoder.set_bytes(
-                3,
+                2,
                 size_of::<NttStageParams>() as NSUInteger,
                 (&params as *const NttStageParams).cast::<c_void>(),
             );
@@ -99,14 +122,12 @@ impl MetalBn254Ntt {
                 stage_threads,
             );
             twiddle_offset += 1usize << stage;
-            source_is_current = !source_is_current;
         }
         stage_encoder.end_encoding();
 
-        let final_source = choose_final_buffer(stage_count, &current, &scratch);
         let transpose_encoder = command_buffer.new_compute_command_encoder();
         transpose_encoder.set_compute_pipeline_state(&runtime.transpose_pipeline);
-        transpose_encoder.set_buffer(0, Some(final_source.as_ref()), 0);
+        transpose_encoder.set_buffer(0, Some(current.as_ref()), 0);
         transpose_encoder.set_buffer(1, Some(transposed.as_ref()), 0);
         transpose_encoder.set_bytes(
             2,
@@ -180,6 +201,25 @@ impl MetalBn254Ntt {
             message_length,
             total_elements,
         })
+    }
+
+    #[cfg(all(test, target_os = "macos"))]
+    pub(super) fn gpu_encode(
+        &self,
+        interleaved_coeffs: &[&[Fr]],
+        codeword_length: usize,
+        interleaving_depth: usize,
+    ) -> Result<Vec<Fr>, String> {
+        let runtime = self.runtime()?;
+        let matrix =
+            self.encode_matrix(interleaved_coeffs, codeword_length, interleaving_depth)?;
+        let total = matrix.rows * matrix.cols;
+        Ok(runtime
+            .buffer_slice::<GpuField>(matrix.buffer.as_ref(), total)
+            .iter()
+            .copied()
+            .map(gpu_to_fr)
+            .collect())
     }
 
     #[cfg(all(test, target_os = "macos"))]
@@ -267,16 +307,4 @@ fn fill_linear_buffer(dst: &mut [GpuField], src: &[Fr]) {
     dst.par_iter_mut()
         .enumerate()
         .for_each(|(index, dst)| *dst = fr_to_gpu(src[index]));
-}
-
-fn choose_final_buffer<'a>(
-    stage_count: usize,
-    current: &'a super::engine::PooledBuffer,
-    scratch: &'a super::engine::PooledBuffer,
-) -> &'a super::engine::PooledBuffer {
-    if stage_count.is_multiple_of(2) {
-        current
-    } else {
-        scratch
-    }
 }

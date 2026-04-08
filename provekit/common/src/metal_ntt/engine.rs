@@ -68,6 +68,7 @@ impl Drop for PooledBufferInner {
 pub(super) struct MetalRuntime {
     pub(super) device:                Device,
     pub(super) queue:                 CommandQueue,
+    pub(super) bit_reverse_pipeline:  ComputePipelineState,
     pub(super) ntt_stage_pipeline:    ComputePipelineState,
     #[allow(dead_code)]
     pub(super) field_mul_pipeline:    ComputePipelineState,
@@ -93,7 +94,12 @@ impl MetalRuntime {
             Ok(Self {
                 device: device.to_owned(),
                 queue: device.new_command_queue(),
-                ntt_stage_pipeline: Self::new_pipeline(&device, &library, "stockham_ntt_stage")?,
+                bit_reverse_pipeline: Self::new_pipeline(
+                    &device,
+                    &library,
+                    "bit_reverse_permute_in_place",
+                )?,
+                ntt_stage_pipeline: Self::new_pipeline(&device, &library, "radix2_ntt_stage")?,
                 field_mul_pipeline: Self::new_pipeline(
                     &device,
                     &library,

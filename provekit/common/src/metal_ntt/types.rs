@@ -11,9 +11,18 @@ pub(super) struct GpuField {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
+pub(super) struct BitReverseParams {
+    pub(super) row_len:        u32,
+    pub(super) log_n:          u32,
+    pub(super) total_elements: u32,
+    pub(super) _pad0:          u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(super) struct NttStageParams {
     pub(super) row_len:        u32,
-    pub(super) stride:         u32,
+    pub(super) half_m:         u32,
     pub(super) twiddle_offset: u32,
     pub(super) _pad0:          u32,
 }

@@ -8,9 +8,16 @@ struct Bn254Element {
 
 typedef Bn254Element Fe;
 
+struct BitReverseConfig {
+    uint row_len;
+    uint log_n;
+    uint total_elements;
+    uint _pad0;
+};
+
 struct StageConfig {
     uint row_len;
-    uint stride;
+    uint half_m;
     uint twiddle_offset;
     uint _pad0;
 };
@@ -219,6 +226,15 @@ inline Fe from_mont(Fe value) {
     return canonicalize(mont_mul(value, FE_ONE));
 }
 
+inline uint reverse_low_bits(uint value, uint bits) {
+    uint reversed = 0;
+    for (uint i = 0; i < bits; ++i) {
+        reversed = (reversed << 1u) | (value & 1u);
+        value >>= 1u;
+    }
+    return reversed;
+}
+
 inline uint rotr32(uint x, uint n) {
     return (x >> n) | (x << (32 - n));
 }
@@ -248,32 +264,53 @@ inline uint small_sigma1(uint x) {
 }
 
 [[kernel]]
-void stockham_ntt_stage(
-    device const Fe *input [[buffer(0)]],
-    device Fe *output [[buffer(1)]],
-    device const Fe *twiddles [[buffer(2)]],
-    constant StageConfig &config [[buffer(3)]],
-    uint index [[thread_position_in_grid]]
+void bit_reverse_permute_in_place(
+    device Fe *values [[buffer(0)]],
+    constant BitReverseConfig &config [[buffer(1)]],
+    uint gid [[thread_position_in_grid]]
+) {
+    if (gid >= config.total_elements) {
+        return;
+    }
+
+    uint row_len = config.row_len;
+    uint row = gid / row_len;
+    uint index = gid - row * row_len;
+    uint reversed = reverse_low_bits(index, config.log_n);
+    if (reversed <= index) {
+        return;
+    }
+
+    uint row_base = row * row_len;
+    Fe tmp = values[row_base + index];
+    values[row_base + index] = values[row_base + reversed];
+    values[row_base + reversed] = tmp;
+}
+
+[[kernel]]
+void radix2_ntt_stage(
+    device Fe *values [[buffer(0)]],
+    device const Fe *twiddles [[buffer(1)]],
+    constant StageConfig &config [[buffer(2)]],
+    uint gid [[thread_position_in_grid]]
 ) {
     uint butterflies_per_row = config.row_len >> 1u;
-    uint row = index / butterflies_per_row;
-    uint local = index - row * butterflies_per_row;
-    uint stride = config.stride;
-    uint j = local % stride;
-    uint k = local / stride;
+    uint row = gid / butterflies_per_row;
+    uint local = gid - row * butterflies_per_row;
+    uint pair_in_group = local % config.half_m;
+    uint group = local / config.half_m;
 
     uint row_base = row * config.row_len;
-    uint base = row_base + k * (stride << 1u) + j;
-    uint mate = base + stride;
+    uint base = row_base + group * (config.half_m << 1u) + pair_in_group;
+    uint mate = base + config.half_m;
 
-    Fe even = input[base];
-    Fe odd = input[mate];
-    Fe twiddle = twiddles[config.twiddle_offset + k];
+    Fe even = values[base];
+    Fe odd = values[mate];
+    Fe twiddle = twiddles[config.twiddle_offset + pair_in_group];
     Fe t = mont_mul(twiddle, odd);
-    uint out_base = row_base + k * stride + j;
 
-    output[out_base] = add_mod(even, t);
-    output[out_base + butterflies_per_row] = sub_mod(even, t);
+    values[base] = add_mod(even, t);
+    values[mate] = sub_mod(even, t);
 }
 
 [[kernel]]
