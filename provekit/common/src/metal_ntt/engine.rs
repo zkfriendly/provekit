@@ -19,7 +19,18 @@ use {
     whir::algebra::ntt::generator,
 };
 
-const SHADER_SOURCE: &str = include_str!("shader.metal");
+const SHADER_SOURCE: &str = concat!(
+    include_str!("shader/common.metal"),
+    "\n",
+    include_str!("shader/field_arithmetic.metal"),
+    "\n",
+    include_str!("shader/ntt_kernels.metal"),
+    "\n",
+    include_str!("shader/matrix_kernels.metal"),
+    "\n",
+    include_str!("shader/sha256_kernels.metal"),
+    "\n",
+);
 
 struct PooledBufferInner {
     runtime:     Arc<MetalRuntime>,
