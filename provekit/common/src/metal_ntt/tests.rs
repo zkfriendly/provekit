@@ -24,7 +24,7 @@ fn metal_matches_cpu_for_small_case() {
     let mut rng = ark_std::test_rng();
     let coeffs: Vec<_> = (0..(1 << 12)).map(|_| Fr::rand(&mut rng)).collect();
     let cpu = ArkNtt::<Fr>::default().interleaved_encode(&[&coeffs], 1 << 11, 1 << 1);
-    let gpu = gpu.interleaved_encode(&[&coeffs], 1 << 11, 1 << 1);
+    let gpu = gpu.gpu_encode(&[&coeffs], 1 << 11, 1 << 1).unwrap();
     assert_eq!(cpu, gpu);
 }
 

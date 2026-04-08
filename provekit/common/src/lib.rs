@@ -40,38 +40,27 @@ pub use {
 /// Must be called once before any prove/verify operations.
 /// Idempotent — safe to call multiple times.
 pub fn register_ntt() {
-    use std::{
-        env,
-        sync::{Arc, Once},
-    };
+    use std::sync::{Arc, Once};
 
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let ntt: Arc<dyn whir::algebra::ntt::ReedSolomon<FieldElement>> = {
-            #[cfg(target_os = "macos")]
-            {
-                match metal_ntt::MetalBn254Ntt::new() {
-                    Ok(metal) => {
-                        let accelerator: Arc<
-                            dyn whir::protocols::irs_commit::AcceleratedCommitter<FieldElement>,
-                        > = Arc::new(metal);
-                        whir::protocols::irs_commit::ACCELERATORS.insert(accelerator);
-                        Arc::new(metal)
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            "failed to initialize Metal BN254 NTT backend: {err}; falling back to \
-                             CPU NTT"
-                        );
-                        Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default())
-                    }
-                }
+        #[cfg(target_os = "macos")]
+        match metal_ntt::MetalBn254Ntt::new() {
+            Ok(metal) => {
+                let accelerator: Arc<
+                    dyn whir::protocols::irs_commit::AcceleratedCommitter<FieldElement>,
+                > = Arc::new(metal);
+                whir::protocols::irs_commit::ACCELERATORS.insert(accelerator);
             }
-            #[cfg(not(target_os = "macos"))]
-            {
-                Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default())
+            Err(err) => {
+                tracing::warn!(
+                    "failed to initialize Metal BN254 accelerator: {err}; using CPU NTT only"
+                );
             }
-        };
+        }
+
+        let ntt: Arc<dyn whir::algebra::ntt::ReedSolomon<FieldElement>> =
+            Arc::new(whir::algebra::ntt::ArkNtt::<FieldElement>::default());
         whir::algebra::ntt::NTT.insert(ntt);
 
         whir::hash::ENGINES.register(Arc::new(skyscraper::SkyscraperHashEngine));

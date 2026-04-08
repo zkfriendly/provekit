@@ -13,22 +13,6 @@ use {
 
 impl MetalBn254Ntt {
 
-    pub(super) fn gpu_encode(
-        &self,
-        interleaved_coeffs: &[&[Fr]],
-        codeword_length: usize,
-        interleaving_depth: usize,
-    ) -> Result<Vec<Fr>, String> {
-        let matrix = self.encode_matrix(interleaved_coeffs, codeword_length, interleaving_depth)?;
-        Ok(self
-            .runtime()?
-            .buffer_slice::<GpuField>(matrix.buffer.as_ref(), matrix.rows * matrix.cols)
-            .iter()
-            .copied()
-            .map(gpu_to_fr)
-            .collect())
-    }
-
     pub(super) fn encode_matrix(
         &self,
         interleaved_coeffs: &[&[Fr]],
